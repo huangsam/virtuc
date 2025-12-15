@@ -267,7 +267,7 @@ fn parse_for(input: &[Token]) -> IResult<&[Token], Stmt> {
             delimited(
                 token(Token::LParen),
                 tuple((
-                    opt(terminated(parse_declaration, token(Token::Semicolon))),
+                    opt(parse_declaration), // parse_declaration already includes the semicolon
                     opt(terminated(parse_expr, token(Token::Semicolon))),
                     opt(parse_expr),
                 )),
