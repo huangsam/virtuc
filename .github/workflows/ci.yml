@@ -10,51 +10,23 @@ jobs:
   rust-build:
     name: Rust
     runs-on: ubuntu-latest
+    container: rust:1.92-trixie
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install libc++
-        run: sudo apt-get update && sudo apt-get install -y libc++-dev libc++abi-dev
+      - name: Install System Dependencies
+        run: |
+          apt-get update
+          apt-get install -y llvm-17 clang-17 libpolly-17-dev libc++-17-dev libc++abi-17-dev
 
-      # Define LLVM Version and RUSTFLAGS at the environment level for clarity
       - name: Set Environment Variables
         run: |
-          echo "LLVM_VERSION=20" >> $GITHUB_ENV
-          echo "LLVM_VERSION_MINOR=1" >> $GITHUB_ENV
+          echo "LLVM_SYS_170_PREFIX=/usr/lib/llvm-17" >> $GITHUB_ENV
+          echo "LLVM_CONFIG_PATH=/usr/bin/llvm-config-17" >> $GITHUB_ENV
           # CRITICAL: Forces linking against the LLVM C++ standard library (libc++)
-          echo "RUSTFLAGS=-C link-arg=-lc++" >> $GITHUB_ENV
+          echo "RUSTFLAGS=-C link-arg=-lc++ -C link-arg=-L/usr/lib/llvm-17/lib" >> $GITHUB_ENV
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      # 1. Caching Step
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          # Cache key now uses the new LLVM_VERSION
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ env.LLVM_VERSION }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
-            ${{ runner.os }}-cargo-
-
-      # 2. Install LLVM Version
-      - name: Install LLVM ${{ env.LLVM_VERSION }}.${{ env.LLVM_VERSION_MINOR }}
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          # https://github.com/KyleMayes/install-llvm-action/blob/v2/assets.json
-          version: ${{ env.LLVM_VERSION }}.${{ env.LLVM_VERSION_MINOR }}
-
-      # 3. Explicitly set LLVM_CONFIG_PATH (prevents slow source compilation)
-      - name: Set LLVM_CONFIG_PATH
-        run: |
-          echo "LLVM_CONFIG_PATH=${{ env.LLVM_PATH }}/bin/llvm-config-${{ env.LLVM_VERSION }}" >> $GITHUB_ENV
-
-      # 4. Build the VirtuC project (RUSTFLAGS is now active)
       - name: Build VirtuC
         run: cargo build --release
