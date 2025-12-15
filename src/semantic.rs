@@ -67,6 +67,15 @@ impl SemanticAnalyzer {
                     .insert(function.name.clone(), (function.return_ty, param_types));
             }
         }
+        for extern_func in &program.extern_functions {
+            if self.functions.contains_key(&extern_func.name) {
+                self.errors
+                    .push(SemanticError::DuplicateVariable(extern_func.name.clone()));
+            } else {
+                self.functions
+                    .insert(extern_func.name.clone(), (extern_func.return_ty, extern_func.param_types.clone()));
+            }
+        }
     }
 
     /// Analyzes a single function.

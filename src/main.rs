@@ -14,7 +14,6 @@
 //!
 //! - Compile C subset source files to native executables via LLVM
 //! - Optional output file specification
-//! - Future: Support for bytecode generation and VM execution
 
 use clap::{Parser, Subcommand};
 use std::fs;

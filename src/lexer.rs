@@ -50,7 +50,9 @@ pub enum Token {
     #[token("return")]
     Return,
 
-    /// Identifier (e.g., variable names)
+    /// Extern keyword
+    #[token("extern")]
+    Extern,
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
     Identifier(String),
 

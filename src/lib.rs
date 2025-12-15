@@ -11,7 +11,7 @@
 //! 2. **Parsing**: Tokens → Abstract Syntax Tree (AST)
 //! 3. **Semantic Analysis**: AST validation and type checking
 //! 4. **Code Generation**: AST → LLVM Intermediate Representation (IR)
-//! 5. **Execution**: IR → Native executable or bytecode for VM
+//! 5. **Execution**: IR → Native executable
 
 pub mod ast;
 pub mod codegen;
@@ -19,7 +19,6 @@ pub mod error;
 pub mod lexer;
 pub mod parser;
 pub mod semantic;
-pub mod vm;
 
 use std::fs;
 use std::path::Path;

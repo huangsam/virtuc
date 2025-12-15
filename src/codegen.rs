@@ -61,6 +61,9 @@ impl<'ctx> CodeGenerator<'ctx> {
 
     /// Generates LLVM IR for the program.
     pub fn generate(&mut self, program: &Program) -> Result<(), CodegenError> {
+        for extern_func in &program.extern_functions {
+            self.declare_extern_function(extern_func)?;
+        }
         for function in &program.functions {
             self.generate_function(function)?;
         }
@@ -70,6 +73,20 @@ impl<'ctx> CodeGenerator<'ctx> {
     /// Gets the LLVM IR as a string.
     pub fn get_ir(&self) -> String {
         self.module.print_to_string().to_string()
+    }
+
+    /// Declares an extern function.
+    fn declare_extern_function(&mut self, extern_func: &ExternFunction) -> Result<(), CodegenError> {
+        let param_types: Vec<BasicMetadataTypeEnum> = extern_func
+            .param_types
+            .iter()
+            .map(|ty| self.llvm_type(*ty).into())
+            .collect();
+        let fn_type = self
+            .llvm_type(extern_func.return_ty)
+            .fn_type(&param_types, false);
+        self.module.add_function(&extern_func.name, fn_type, None);
+        Ok(())
     }
 
     /// Generates a function.

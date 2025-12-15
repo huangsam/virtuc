@@ -14,7 +14,7 @@ This document outlines the AI agents, tools, and methodologies employed in the d
   - Documentation generation
   - Test case creation
 - **Usage**:
-  - Assisted in implementing the lexer, parser, semantic analyzer, code generator, and virtual machine.
+  - Assisted in implementing the lexer, parser, semantic analyzer, and code generator.
   - Helped with AST design and type system.
   - Provided guidance on Rust best practices and crate usage.
   - Generated comprehensive documentation for public APIs.
@@ -39,7 +39,6 @@ This document outlines the AI agents, tools, and methodologies employed in the d
 
 ## Key Contributions
 
-- Rapid prototyping of complex components (e.g., VM bytecode compiler).
 - Ensuring comprehensive error handling and type safety.
 - Maintaining clean, idiomatic Rust code.
 - Generating thorough documentation and examples.

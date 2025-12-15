@@ -123,9 +123,22 @@ pub struct Function {
     pub body: Stmt,
 }
 
+/// Represents an extern function declaration.
+#[derive(Debug, PartialEq, Clone)]
+pub struct ExternFunction {
+    /// Return type of the function
+    pub return_ty: Type,
+    /// Name of the function
+    pub name: String,
+    /// Parameter types
+    pub param_types: Vec<Type>,
+}
+
 /// Represents the top-level program.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Program {
+    /// List of extern function declarations
+    pub extern_functions: Vec<ExternFunction>,
     /// List of function definitions
     pub functions: Vec<Function>,
 }

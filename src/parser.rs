@@ -29,6 +29,12 @@ use nom::{
 use crate::ast::*;
 use crate::lexer::Token;
 
+#[derive(Debug, PartialEq, Clone)]
+enum TopLevel {
+    Extern(ExternFunction),
+    Function(Function),
+}
+
 /// Helper function to match a specific token
 fn token(expected: Token) -> impl Fn(&[Token]) -> IResult<&[Token], Token> {
     move |input: &[Token]| {
@@ -311,6 +317,36 @@ fn parse_param(input: &[Token]) -> IResult<&[Token], (Type, String)> {
     tuple((parse_type, parse_identifier))(input)
 }
 
+/// Parse an extern function: extern type identifier(types);
+fn parse_extern_function(input: &[Token]) -> IResult<&[Token], ExternFunction> {
+    map(
+        tuple((
+            token(Token::Extern),
+            parse_type,
+            parse_identifier,
+            delimited(
+                token(Token::LParen),
+                separated_list0(token(Token::Comma), parse_type),
+                token(Token::RParen),
+            ),
+            token(Token::Semicolon),
+        )),
+        |(_, return_ty, name, param_types, _)| ExternFunction {
+            return_ty,
+            name,
+            param_types,
+        },
+    )(input)
+}
+
+/// Parse a top-level item: extern function or function definition
+fn parse_top_level(input: &[Token]) -> IResult<&[Token], TopLevel> {
+    alt((
+        map(parse_extern_function, TopLevel::Extern),
+        map(parse_function, TopLevel::Function),
+    ))(input)
+}
+
 /// Parse a function: type identifier(params) { body }
 fn parse_function(input: &[Token]) -> IResult<&[Token], Function> {
     map(
@@ -333,14 +369,25 @@ fn parse_function(input: &[Token]) -> IResult<&[Token], Function> {
     )(input)
 }
 
-/// Parse the program: functions
+/// Parse the program: extern functions and functions
 pub fn parse(tokens: &[Token]) -> Result<Program, String> {
-    let (remaining, functions) =
-        many0(parse_function)(tokens).map_err(|e| format!("Parse error: {:?}", e))?;
+    let (remaining, items) =
+        many0(parse_top_level)(tokens).map_err(|e| format!("Parse error: {:?}", e))?;
     if !remaining.is_empty() {
         return Err(format!("Unexpected tokens at end: {:?}", remaining));
     }
-    Ok(Program { functions })
+    let mut extern_functions = Vec::new();
+    let mut functions = Vec::new();
+    for item in items {
+        match item {
+            TopLevel::Extern(e) => extern_functions.push(e),
+            TopLevel::Function(f) => functions.push(f),
+        }
+    }
+    Ok(Program {
+        extern_functions,
+        functions,
+    })
 }
 
 #[cfg(test)]
@@ -378,5 +425,17 @@ mod tests {
         assert_eq!(func2.name, "main");
         assert_eq!(func2.return_ty, Type::Int);
         assert_eq!(func2.params, vec![]);
+    }
+
+    #[test]
+    fn test_parse_extern_function() {
+        let tokens = lex("extern int printf(int, int); int main() { return 0; }").unwrap();
+        let ast = parse(&tokens).unwrap();
+        assert_eq!(ast.extern_functions.len(), 1);
+        assert_eq!(ast.functions.len(), 1);
+        let extern_func = &ast.extern_functions[0];
+        assert_eq!(extern_func.name, "printf");
+        assert_eq!(extern_func.return_ty, Type::Int);
+        assert_eq!(extern_func.param_types, vec![Type::Int, Type::Int]);
     }
 }
