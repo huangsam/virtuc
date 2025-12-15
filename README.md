@@ -5,7 +5,9 @@
 
 A compiler for a subset of the C programming language, implemented in Rust.
 
-VirtuC supports lexical analysis, parsing, semantic analysis, and code generation to LLVM IR for native execution.
+VirtuC supports the E2E compilation from C source code to [LLVM IR] for native execution. The IR artifact is then compiled and linked using `clang` to produce a final executable.
+
+[LLVM IR]: https://llvm.org/docs/LangRef.html
 
 ## Features
 
