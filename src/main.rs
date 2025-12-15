@@ -1,3 +1,21 @@
+//! # Virtuc Compiler CLI
+//!
+//! This module provides the command-line interface for the `virtuc` compiler.
+//! It handles parsing command-line arguments and orchestrating the compilation
+//! process from source files to executable binaries.
+//!
+//! ## Usage
+//!
+//! ```bash
+//! virtuc input.c -o output
+//! ```
+//!
+//! ## Features
+//!
+//! - Compile C subset source files to native executables via LLVM
+//! - Optional output file specification
+//! - Future: Support for bytecode generation and VM execution
+
 use clap::Parser;
 
 #[derive(Parser)]
