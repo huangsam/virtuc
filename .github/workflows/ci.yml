@@ -17,7 +17,9 @@ jobs:
       - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2
         with:
-          version: "21.1.0"
+          # Specify the LLVM version to install
+          # https://github.com/KyleMayes/install-llvm-action/blob/v2/assets.json
+          version: "20.1"
       - name: Run cargo build
         run: cargo build
       - name: Run cargo test
