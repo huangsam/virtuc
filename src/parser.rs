@@ -18,3 +18,358 @@
 //! grammar rule. Provides good error messages and recovery for syntax errors.
 
 // AST building using nom crate
+
+use nom::{
+    IResult,
+    branch::alt,
+    combinator::{map, opt},
+    multi::{many0, separated_list0},
+    sequence::{delimited, preceded, terminated, tuple},
+    error::{Error, ErrorKind},
+};
+
+use crate::lexer::Token;
+use crate::ast::*;
+
+/// Helper function to match a specific token
+fn token(expected: Token) -> impl Fn(&[Token]) -> IResult<&[Token], Token> {
+    move |input: &[Token]| {
+        if input.is_empty() {
+            return Err(nom::Err::Error(Error::new(input, ErrorKind::Eof)));
+        }
+        if input[0] == expected {
+            Ok((&input[1..], expected.clone()))
+        } else {
+            Err(nom::Err::Error(Error::new(input, ErrorKind::Tag)))
+        }
+    }
+}
+
+/// Parse a type: int | float
+fn parse_type(input: &[Token]) -> IResult<&[Token], Type> {
+    alt((
+        map(token(Token::Int), |_| Type::Int),
+        map(token(Token::Float), |_| Type::Float),
+    ))(input)
+}
+
+/// Parse an identifier
+fn parse_identifier(input: &[Token]) -> IResult<&[Token], String> {
+    if input.is_empty() {
+        return Err(nom::Err::Error(Error::new(input, ErrorKind::Eof)));
+    }
+    match &input[0] {
+        Token::Identifier(name) => Ok((&input[1..], name.clone())),
+        _ => Err(nom::Err::Error(Error::new(input, ErrorKind::Tag))),
+    }
+}
+
+/// Parse a literal
+fn parse_literal(input: &[Token]) -> IResult<&[Token], Literal> {
+    if input.is_empty() {
+        return Err(nom::Err::Error(Error::new(input, ErrorKind::Eof)));
+    }
+    match &input[0] {
+        Token::IntLiteral(n) => Ok((&input[1..], Literal::Int(*n))),
+        Token::FloatLiteral(f) => Ok((&input[1..], Literal::Float(*f))),
+        _ => Err(nom::Err::Error(Error::new(input, ErrorKind::Tag))),
+    }
+}
+
+/// Parse a binary operator
+fn parse_binop(input: &[Token]) -> IResult<&[Token], BinOp> {
+    alt((
+        map(token(Token::Plus), |_| BinOp::Plus),
+        map(token(Token::Minus), |_| BinOp::Minus),
+        map(token(Token::Multiply), |_| BinOp::Multiply),
+        map(token(Token::Divide), |_| BinOp::Divide),
+        map(token(Token::Equal), |_| BinOp::Equal),
+        map(token(Token::NotEqual), |_| BinOp::NotEqual),
+        map(token(Token::LessThan), |_| BinOp::LessThan),
+        map(token(Token::GreaterThan), |_| BinOp::GreaterThan),
+        map(token(Token::LessEqual), |_| BinOp::LessEqual),
+        map(token(Token::GreaterEqual), |_| BinOp::GreaterEqual),
+    ))(input)
+}
+
+/// Parse a primary expression: literal | identifier | (expr) | call
+fn parse_primary_expr(input: &[Token]) -> IResult<&[Token], Expr> {
+    alt((
+        map(parse_literal, Expr::Literal),
+        map(parse_identifier, Expr::Identifier),
+        delimited(token(Token::LParen), parse_expr, token(Token::RParen)),
+        parse_call,
+    ))(input)
+}
+
+/// Parse a function call: identifier(args)
+fn parse_call(input: &[Token]) -> IResult<&[Token], Expr> {
+    map(
+        tuple((
+            parse_identifier,
+            delimited(
+                token(Token::LParen),
+                separated_list0(token(Token::Comma), parse_expr),
+                token(Token::RParen),
+            ),
+        )),
+        |(name, args)| Expr::Call { name, args },
+    )(input)
+}
+
+/// Parse multiplicative expression: primary (*|/ primary)*
+fn parse_multiplicative(input: &[Token]) -> IResult<&[Token], Expr> {
+    let (input, mut expr) = parse_primary_expr(input)?;
+    let mut input = input;
+    loop {
+        let result = opt(tuple((
+            alt((token(Token::Multiply), token(Token::Divide))),
+            parse_primary_expr,
+        )))(input)?;
+        if let Some((op_token, right)) = result.1 {
+            let op = match op_token {
+                Token::Multiply => BinOp::Multiply,
+                Token::Divide => BinOp::Divide,
+                _ => unreachable!(),
+            };
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op,
+                right: Box::new(right),
+            };
+            input = result.0;
+        } else {
+            break;
+        }
+    }
+    Ok((input, expr))
+}
+
+/// Parse additive expression: multiplicative (+|- multiplicative)*
+fn parse_additive(input: &[Token]) -> IResult<&[Token], Expr> {
+    let (input, mut expr) = parse_multiplicative(input)?;
+    let mut input = input;
+    loop {
+        let result = opt(tuple((
+            alt((token(Token::Plus), token(Token::Minus))),
+            parse_multiplicative,
+        )))(input)?;
+        if let Some((op_token, right)) = result.1 {
+            let op = match op_token {
+                Token::Plus => BinOp::Plus,
+                Token::Minus => BinOp::Minus,
+                _ => unreachable!(),
+            };
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op,
+                right: Box::new(right),
+            };
+            input = result.0;
+        } else {
+            break;
+        }
+    }
+    Ok((input, expr))
+}
+
+/// Parse comparison expression: additive (==|!=|<|>|<=|>= additive)*
+fn parse_comparison(input: &[Token]) -> IResult<&[Token], Expr> {
+    let (input, mut expr) = parse_additive(input)?;
+    let mut input = input;
+    let result = opt(tuple((parse_binop, parse_additive)))(input)?;
+    if let Some((op, right)) = result.1 {
+        expr = Expr::Binary {
+            left: Box::new(expr),
+            op,
+            right: Box::new(right),
+        };
+        input = result.0;
+    }
+    Ok((input, expr))
+}
+
+/// Parse expression (top level)
+fn parse_expr(input: &[Token]) -> IResult<&[Token], Expr> {
+    parse_comparison(input)
+}
+
+/// Parse a declaration: type identifier (= expr)? ;
+fn parse_declaration(input: &[Token]) -> IResult<&[Token], Stmt> {
+    map(
+        tuple((
+            parse_type,
+            parse_identifier,
+            opt(preceded(token(Token::Assign), parse_expr)),
+            token(Token::Semicolon),
+        )),
+        |(ty, name, init, _)| Stmt::Declaration { ty, name, init },
+    )(input)
+}
+
+/// Parse an assignment: identifier = expr ;
+fn parse_assignment(input: &[Token]) -> IResult<&[Token], Stmt> {
+    map(
+        tuple((
+            parse_identifier,
+            token(Token::Assign),
+            parse_expr,
+            token(Token::Semicolon),
+        )),
+        |(name, _, expr, _)| Stmt::Assignment { name, expr },
+    )(input)
+}
+
+/// Parse a return statement: return expr? ;
+fn parse_return(input: &[Token]) -> IResult<&[Token], Stmt> {
+    map(
+        tuple((
+            token(Token::Return),
+            opt(parse_expr),
+            token(Token::Semicolon),
+        )),
+        |(_, expr, _)| Stmt::Return(expr),
+    )(input)
+}
+
+/// Parse a block: { statements }
+fn parse_block(input: &[Token]) -> IResult<&[Token], Stmt> {
+    map(
+        delimited(
+            token(Token::LBrace),
+            many0(parse_stmt),
+            token(Token::RBrace),
+        ),
+        Stmt::Block,
+    )(input)
+}
+
+/// Parse an if statement: if (expr) stmt (else stmt)?
+fn parse_if(input: &[Token]) -> IResult<&[Token], Stmt> {
+    map(
+        tuple((
+            token(Token::If),
+            delimited(token(Token::LParen), parse_expr, token(Token::RParen)),
+            parse_stmt,
+            opt(preceded(token(Token::Else), parse_stmt)),
+        )),
+        |(_, cond, then, else_)| Stmt::If {
+            cond,
+            then: Box::new(then),
+            else_: else_.map(Box::new),
+        },
+    )(input)
+}
+
+/// Parse a for loop: for (init? ; cond? ; update?) stmt
+fn parse_for(input: &[Token]) -> IResult<&[Token], Stmt> {
+    map(
+        tuple((
+            token(Token::For),
+            delimited(
+                token(Token::LParen),
+                tuple((
+                    opt(terminated(parse_declaration, token(Token::Semicolon))),
+                    opt(terminated(parse_expr, token(Token::Semicolon))),
+                    opt(parse_expr),
+                )),
+                token(Token::RParen),
+            ),
+            parse_stmt,
+        )),
+        |(_, (init, cond, update), body)| Stmt::For {
+            init: init.map(Box::new),
+            cond,
+            update,
+            body: Box::new(body),
+        },
+    )(input)
+}
+
+/// Parse an expression statement: expr ;
+fn parse_expr_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
+    map(
+        terminated(parse_expr, token(Token::Semicolon)),
+        Stmt::Expr,
+    )(input)
+}
+
+/// Parse a statement
+fn parse_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
+    alt((
+        parse_declaration,
+        parse_assignment,
+        parse_return,
+        parse_if,
+        parse_for,
+        parse_block,
+        parse_expr_stmt,
+    ))(input)
+}
+
+/// Parse a function parameter: type identifier
+fn parse_param(input: &[Token]) -> IResult<&[Token], (Type, String)> {
+    tuple((parse_type, parse_identifier))(input)
+}
+
+/// Parse a function: type identifier(params) { body }
+fn parse_function(input: &[Token]) -> IResult<&[Token], Function> {
+    map(
+        tuple((
+            parse_type,
+            parse_identifier,
+            delimited(
+                token(Token::LParen),
+                separated_list0(token(Token::Comma), parse_param),
+                token(Token::RParen),
+            ),
+            parse_block,
+        )),
+        |(return_ty, name, params, body)| Function {
+            return_ty,
+            name,
+            params,
+            body,
+        },
+    )(input)
+}
+
+/// Parse the program: functions
+pub fn parse(tokens: &[Token]) -> Result<Program, String> {
+    let (remaining, functions) = many0(parse_function)(tokens)
+        .map_err(|e| format!("Parse error: {:?}", e))?;
+    if !remaining.is_empty() {
+        return Err(format!("Unexpected tokens at end: {:?}", remaining));
+    }
+    Ok(Program { functions })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::lex;
+
+    #[test]
+    fn test_parse_function() {
+        let tokens = lex("int add(int a, int b) { return a + b; }").unwrap();
+        let ast = parse(&tokens).unwrap();
+        assert_eq!(ast.functions.len(), 1);
+        let func = &ast.functions[0];
+        assert_eq!(func.name, "add");
+        assert_eq!(func.return_ty, Type::Int);
+        assert_eq!(func.params, vec![(Type::Int, "a".to_string()), (Type::Int, "b".to_string())]);
+        // Check body
+        if let Stmt::Block(stmts) = &func.body {
+            assert_eq!(stmts.len(), 1);
+            if let Stmt::Return(Some(Expr::Binary { left, op, right })) = &stmts[0] {
+                assert_eq!(**left, Expr::Identifier("a".to_string()));
+                assert_eq!(*op, BinOp::Plus);
+                assert_eq!(**right, Expr::Identifier("b".to_string()));
+            } else {
+                panic!("Expected return a + b");
+            }
+        } else {
+            panic!("Expected block");
+        }
+    }
+}

@@ -50,16 +50,16 @@ pub enum Token {
     Return,
 
     /// Identifier (e.g., variable names)
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
-    Identifier,
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
+    Identifier(String),
 
     /// Float literal
-    #[regex(r"\d+\.\d+")]
-    FloatLiteral,
+    #[regex(r"\d+\.\d+", |lex| lex.slice().parse::<f64>().unwrap())]
+    FloatLiteral(f64),
 
     /// Integer literal
-    #[regex(r"\d+")]
-    IntLiteral,
+    #[regex(r"\d+", |lex| lex.slice().parse::<i64>().unwrap())]
+    IntLiteral(i64),
 
     /// Less than or equal operator
     #[token("<=")]
@@ -162,9 +162,9 @@ mod tests {
         let input = "int x = 5;";
         let expected = vec![
             Token::Int,
-            Token::Identifier,
+            Token::Identifier("x".to_string()),
             Token::Assign,
-            Token::IntLiteral,
+            Token::IntLiteral(5),
             Token::Semicolon,
         ];
         assert_eq!(lex(input).unwrap(), expected);
@@ -175,9 +175,9 @@ mod tests {
         let input = "float y = 3.14;";
         let expected = vec![
             Token::Float,
-            Token::Identifier,
+            Token::Identifier("y".to_string()),
             Token::Assign,
-            Token::FloatLiteral,
+            Token::FloatLiteral(3.14),
             Token::Semicolon,
         ];
         assert_eq!(lex(input).unwrap(), expected);
@@ -187,11 +187,11 @@ mod tests {
     fn test_arithmetic_expression() {
         let input = "x + y * 2";
         let expected = vec![
-            Token::Identifier,
+            Token::Identifier("x".to_string()),
             Token::Plus,
-            Token::Identifier,
+            Token::Identifier("y".to_string()),
             Token::Multiply,
-            Token::IntLiteral,
+            Token::IntLiteral(2),
         ];
         assert_eq!(lex(input).unwrap(), expected);
     }
@@ -200,9 +200,9 @@ mod tests {
     fn test_comparison() {
         let input = "a == b";
         let expected = vec![
-            Token::Identifier,
+            Token::Identifier("a".to_string()),
             Token::Equal,
-            Token::Identifier,
+            Token::Identifier("b".to_string()),
         ];
         assert_eq!(lex(input).unwrap(), expected);
     }
@@ -218,19 +218,19 @@ mod tests {
         let input = "int add(int a, int b) { return a + b; }";
         let expected = vec![
             Token::Int,
-            Token::Identifier,
+            Token::Identifier("add".to_string()),
             Token::LParen,
             Token::Int,
-            Token::Identifier,
+            Token::Identifier("a".to_string()),
             Token::Comma,
             Token::Int,
-            Token::Identifier,
+            Token::Identifier("b".to_string()),
             Token::RParen,
             Token::LBrace,
             Token::Return,
-            Token::Identifier,
+            Token::Identifier("a".to_string()),
             Token::Plus,
-            Token::Identifier,
+            Token::Identifier("b".to_string()),
             Token::Semicolon,
             Token::RBrace,
         ];
@@ -243,19 +243,19 @@ mod tests {
         let expected = vec![
             Token::If,
             Token::LParen,
-            Token::Identifier,
+            Token::Identifier("x".to_string()),
             Token::GreaterThan,
-            Token::IntLiteral,
+            Token::IntLiteral(0),
             Token::RParen,
             Token::LBrace,
             Token::Return,
-            Token::Identifier,
+            Token::Identifier("x".to_string()),
             Token::Semicolon,
             Token::RBrace,
             Token::Else,
             Token::LBrace,
             Token::Return,
-            Token::IntLiteral,
+            Token::IntLiteral(0),
             Token::Semicolon,
             Token::RBrace,
         ];
@@ -269,26 +269,26 @@ mod tests {
             Token::For,
             Token::LParen,
             Token::Int,
-            Token::Identifier,
+            Token::Identifier("i".to_string()),
             Token::Assign,
-            Token::IntLiteral,
+            Token::IntLiteral(0),
             Token::Semicolon,
-            Token::Identifier,
+            Token::Identifier("i".to_string()),
             Token::LessThan,
-            Token::IntLiteral,
+            Token::IntLiteral(10),
             Token::Semicolon,
-            Token::Identifier,
+            Token::Identifier("i".to_string()),
             Token::Assign,
-            Token::Identifier,
+            Token::Identifier("i".to_string()),
             Token::Plus,
-            Token::IntLiteral,
+            Token::IntLiteral(1),
             Token::RParen,
             Token::LBrace,
-            Token::Identifier,
+            Token::Identifier("x".to_string()),
             Token::Assign,
-            Token::Identifier,
+            Token::Identifier("x".to_string()),
             Token::Plus,
-            Token::Identifier,
+            Token::Identifier("i".to_string()),
             Token::Semicolon,
             Token::RBrace,
         ];
@@ -300,12 +300,12 @@ mod tests {
         let input = "int x = 5; // this is a comment\nfloat y;";
         let expected = vec![
             Token::Int,
-            Token::Identifier,
+            Token::Identifier("x".to_string()),
             Token::Assign,
-            Token::IntLiteral,
+            Token::IntLiteral(5),
             Token::Semicolon,
             Token::Float,
-            Token::Identifier,
+            Token::Identifier("y".to_string()),
             Token::Semicolon,
         ];
         assert_eq!(lex(input).unwrap(), expected);
