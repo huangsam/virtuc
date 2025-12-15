@@ -174,3 +174,99 @@ fn test_printf_with_multiple_args_include() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Hi 10"));
 }
+
+#[test]
+fn test_non_variadic_wrong_arity() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_wrong_arity");
+
+    let source = r#"
+        extern int foo(int);
+
+        int main() {
+            foo();
+            return 0;
+        }
+    "#;
+
+    assert!(compile(source, &output_path).is_err());
+}
+
+#[test]
+fn test_printf_without_declaration_fails() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_no_decl");
+
+    let source = r#"
+        int main() {
+            printf("No decl\n");
+            return 0;
+        }
+    "#;
+
+    assert!(compile(source, &output_path).is_err());
+}
+
+#[test]
+fn test_duplicate_includes() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_dup_include");
+
+    let source = r#"
+        #include <stdio.h>
+        #include <stdio.h>
+
+        int main() {
+            printf("Duplicate include\n");
+            return 0;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let output = Command::new(&output_path).output().expect("failed to run");
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Duplicate include"));
+}
+
+#[test]
+fn test_variadic_format_mix() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_variadic_mix");
+
+    let source = r#"
+        #include <stdio.h>
+
+        int main() {
+            printf("%s %d %x\n", "val", 42, 255);
+            return 0;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let output = Command::new(&output_path).output().expect("failed to run");
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("val 42 ff") || stdout.contains("val 42 FF"));
+}
+
+#[test]
+fn test_printf_many_args() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_printf_many");
+
+    let source = r#"
+        #include <stdio.h>
+
+        int main() {
+            printf("%d %d %d %d %d %d %d %d %d %d\n", 1,2,3,4,5,6,7,8,9,10);
+            return 0;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let output = Command::new(&output_path).output().expect("failed to run");
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("1 2 3 4 5 6 7 8 9 10"));
+}
