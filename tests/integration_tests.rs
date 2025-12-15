@@ -124,3 +124,53 @@ fn test_compile_and_run_with_include() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Hello from include!"));
 }
+
+#[test]
+fn test_printf_with_integer() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_printf_int");
+
+    let source = r#"
+        extern int printf(string, ...);
+
+        int main() {
+            printf("Number: %d\n", 7);
+            return 0;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+
+    let output = Command::new(&output_path)
+        .output()
+        .expect("failed to run generated executable");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Number: 7"));
+}
+
+#[test]
+fn test_printf_with_multiple_args_include() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_printf_multi");
+
+    let source = r#"
+        #include <stdio.h>
+
+        int main() {
+            printf("%s %d\n", "Hi", 10);
+            return 0;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+
+    let output = Command::new(&output_path)
+        .output()
+        .expect("failed to run generated executable");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Hi 10"));
+}
