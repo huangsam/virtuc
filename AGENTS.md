@@ -13,11 +13,6 @@ This document outlines the AI agents, tools, and methodologies employed in the d
   - Error diagnosis and fixes
   - Documentation generation
   - Test case creation
-- **Usage**:
-  - Assisted in implementing the lexer, parser, semantic analyzer, and code generator.
-  - Helped with AST design and type system.
-  - Provided guidance on Rust best practices and crate usage.
-  - Generated comprehensive documentation for public APIs.
 
 ### Development Tools
 

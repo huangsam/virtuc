@@ -11,8 +11,9 @@ VirtuC supports lexical analysis, parsing, semantic analysis, and code generatio
 
 - **Lexing & Parsing**: Tokenizes and parses C subset into AST using `logos` and `nom`.
 - **Semantic Analysis**: Type checking and symbol resolution.
-- **Code Generation**: Emits LLVM IR via `inkwell`.
+- **Code Generation**: Emits LLVM IR via `inkwell` and links with system libraries via `clang`.
 - **CLI**: Compiles to native executables.
+- **C Interop**: Supports `extern` declarations and `#include <...>` headers.
 
 ## Supported C Subset
 
