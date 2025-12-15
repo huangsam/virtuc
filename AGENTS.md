@@ -1,6 +1,6 @@
-# Agents and Tools Used in Virtuc Development
+# Agents and Tools Used in VirtuC Development
 
-This document outlines the AI agents, tools, and methodologies employed in the development of Virtuc, a C subset compiler implemented in Rust.
+This document outlines the AI agents, tools, and methodologies employed in the development of VirtuC, a C subset compiler implemented in Rust.
 
 ## AI Agents
 

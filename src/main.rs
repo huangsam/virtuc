@@ -1,4 +1,4 @@
-//! # Virtuc Compiler CLI
+//! # VirtuC Compiler CLI
 //!
 //! This module provides the command-line interface for the `virtuc` compiler.
 //! It handles parsing command-line arguments and orchestrating the compilation

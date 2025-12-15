@@ -1,4 +1,4 @@
-//! # Virtuc Compiler Library
+//! # VirtuC Compiler Library
 //!
 //! This is the main library crate for the `virtuc` compiler, a Rust-based compiler
 //! for a minimal subset of the C programming language. The compiler supports only
