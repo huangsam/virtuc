@@ -200,7 +200,7 @@ fn unescape_c_string(s: &str) -> String {
                 Some('x') => {
                     // parse up to two hex digits
                     let hi = chars.next();
-                    let lo = if let Some(c2) = hi { chars.next() } else { None };
+                    let lo = if let Some(_c2) = hi { chars.next() } else { None };
                     if let (Some(h), Some(l)) = (hi, lo) {
                         if let (Some(hv), Some(lv)) = (h.to_digit(16), l.to_digit(16)) {
                             let val = (hv * 16 + lv) as u8;
