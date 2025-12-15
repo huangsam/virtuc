@@ -20,10 +20,10 @@
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
-use inkwell::types::{BasicType, BasicTypeEnum, BasicMetadataTypeEnum};
-use inkwell::values::{BasicValueEnum, PointerValue, BasicMetadataValueEnum};
-use inkwell::{IntPredicate, FloatPredicate};
-use inkwell::targets::{Target, InitializationConfig, TargetMachine};
+use inkwell::targets::{InitializationConfig, Target, TargetMachine};
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
+use inkwell::{FloatPredicate, IntPredicate};
 use std::collections::HashMap;
 
 use crate::ast::*;
@@ -75,10 +75,14 @@ impl<'ctx> CodeGenerator<'ctx> {
     /// Generates a function.
     fn generate_function(&mut self, function: &Function) -> Result<(), CodegenError> {
         // Create function type
-        let param_types: Vec<BasicMetadataTypeEnum> = function.params.iter()
+        let param_types: Vec<BasicMetadataTypeEnum> = function
+            .params
+            .iter()
             .map(|(ty, _)| self.llvm_type(*ty).into())
             .collect();
-        let fn_type = self.llvm_type(function.return_ty).fn_type(&param_types, false);
+        let fn_type = self
+            .llvm_type(function.return_ty)
+            .fn_type(&param_types, false);
 
         // Create function
         let llvm_function = self.module.add_function(&function.name, fn_type, None);
@@ -107,10 +111,14 @@ impl<'ctx> CodeGenerator<'ctx> {
             // Add implicit return if missing
             match function.return_ty {
                 Type::Int => {
-                    self.builder.build_return(Some(&self.context.i64_type().const_zero())).unwrap();
+                    self.builder
+                        .build_return(Some(&self.context.i64_type().const_zero()))
+                        .unwrap();
                 }
                 Type::Float => {
-                    self.builder.build_return(Some(&self.context.f64_type().const_zero())).unwrap();
+                    self.builder
+                        .build_return(Some(&self.context.f64_type().const_zero()))
+                        .unwrap();
                 }
             }
         }
@@ -159,23 +167,45 @@ impl<'ctx> CodeGenerator<'ctx> {
             Stmt::If { cond, then, else_ } => {
                 let cond_value = self.generate_expr(cond)?;
                 let cond_bool = if cond_value.get_type().is_int_type() {
-                    self.builder.build_int_compare(IntPredicate::NE, cond_value.into_int_value(), self.context.i64_type().const_zero(), "cond").unwrap()
+                    self.builder
+                        .build_int_compare(
+                            IntPredicate::NE,
+                            cond_value.into_int_value(),
+                            self.context.i64_type().const_zero(),
+                            "cond",
+                        )
+                        .unwrap()
                 } else {
                     return Err(CodegenError("Non-integer condition".to_string()));
                 };
 
-                let current_fn = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+                let current_fn = self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_parent()
+                    .unwrap();
                 let then_block = self.context.append_basic_block(current_fn, "then");
                 let else_block = self.context.append_basic_block(current_fn, "else");
                 let merge_block = self.context.append_basic_block(current_fn, "merge");
 
-                self.builder.build_conditional_branch(cond_bool, then_block, else_block).unwrap();
+                self.builder
+                    .build_conditional_branch(cond_bool, then_block, else_block)
+                    .unwrap();
 
                 // Then block
                 self.builder.position_at_end(then_block);
                 self.generate_stmt(then)?;
-                if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-                    self.builder.build_unconditional_branch(merge_block).unwrap();
+                if self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_terminator()
+                    .is_none()
+                {
+                    self.builder
+                        .build_unconditional_branch(merge_block)
+                        .unwrap();
                 }
 
                 // Else block
@@ -183,8 +213,16 @@ impl<'ctx> CodeGenerator<'ctx> {
                 if let Some(else_stmt) = else_ {
                     self.generate_stmt(else_stmt)?;
                 }
-                if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-                    self.builder.build_unconditional_branch(merge_block).unwrap();
+                if self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_terminator()
+                    .is_none()
+                {
+                    self.builder
+                        .build_unconditional_branch(merge_block)
+                        .unwrap();
                 }
 
                 // Merge block
@@ -218,7 +256,12 @@ impl<'ctx> CodeGenerator<'ctx> {
                 // We need to handle the case where control flow falls off the end of the function.
                 // In C, for non-void functions, this is UB, but we should probably generate a default return or unreachable.
             }
-            Stmt::For { init, cond: _, update: _, body } => {
+            Stmt::For {
+                init,
+                cond: _,
+                update: _,
+                body,
+            } => {
                 // For simplicity, implement basic for loop
                 // This is complex, so for now, just generate the body
                 if let Some(init_stmt) = init {
@@ -243,7 +286,10 @@ impl<'ctx> CodeGenerator<'ctx> {
             },
             Expr::Identifier(name) => {
                 if let Some((ptr, ty)) = self.variables.get(name) {
-                    Ok(self.builder.build_load(self.llvm_type(*ty), *ptr, name).unwrap())
+                    Ok(self
+                        .builder
+                        .build_load(self.llvm_type(*ty), *ptr, name)
+                        .unwrap())
                 } else {
                     Err(CodegenError(format!("Undefined variable: {}", name)))
                 }
@@ -254,84 +300,292 @@ impl<'ctx> CodeGenerator<'ctx> {
                 match op {
                     BinOp::Plus => {
                         if left_val.get_type().is_int_type() {
-                            Ok(self.builder.build_int_add(left_val.into_int_value(), right_val.into_int_value(), "add").unwrap().into())
+                            Ok(self
+                                .builder
+                                .build_int_add(
+                                    left_val.into_int_value(),
+                                    right_val.into_int_value(),
+                                    "add",
+                                )
+                                .unwrap()
+                                .into())
                         } else {
-                            Ok(self.builder.build_float_add(left_val.into_float_value(), right_val.into_float_value(), "fadd").unwrap().into())
+                            Ok(self
+                                .builder
+                                .build_float_add(
+                                    left_val.into_float_value(),
+                                    right_val.into_float_value(),
+                                    "fadd",
+                                )
+                                .unwrap()
+                                .into())
                         }
                     }
                     BinOp::Minus => {
                         if left_val.get_type().is_int_type() {
-                            Ok(self.builder.build_int_sub(left_val.into_int_value(), right_val.into_int_value(), "sub").unwrap().into())
+                            Ok(self
+                                .builder
+                                .build_int_sub(
+                                    left_val.into_int_value(),
+                                    right_val.into_int_value(),
+                                    "sub",
+                                )
+                                .unwrap()
+                                .into())
                         } else {
-                            Ok(self.builder.build_float_sub(left_val.into_float_value(), right_val.into_float_value(), "fsub").unwrap().into())
+                            Ok(self
+                                .builder
+                                .build_float_sub(
+                                    left_val.into_float_value(),
+                                    right_val.into_float_value(),
+                                    "fsub",
+                                )
+                                .unwrap()
+                                .into())
                         }
                     }
                     BinOp::Multiply => {
                         if left_val.get_type().is_int_type() {
-                            Ok(self.builder.build_int_mul(left_val.into_int_value(), right_val.into_int_value(), "mul").unwrap().into())
+                            Ok(self
+                                .builder
+                                .build_int_mul(
+                                    left_val.into_int_value(),
+                                    right_val.into_int_value(),
+                                    "mul",
+                                )
+                                .unwrap()
+                                .into())
                         } else {
-                            Ok(self.builder.build_float_mul(left_val.into_float_value(), right_val.into_float_value(), "fmul").unwrap().into())
+                            Ok(self
+                                .builder
+                                .build_float_mul(
+                                    left_val.into_float_value(),
+                                    right_val.into_float_value(),
+                                    "fmul",
+                                )
+                                .unwrap()
+                                .into())
                         }
                     }
                     BinOp::Divide => {
                         if left_val.get_type().is_int_type() {
-                            Ok(self.builder.build_int_signed_div(left_val.into_int_value(), right_val.into_int_value(), "div").unwrap().into())
+                            Ok(self
+                                .builder
+                                .build_int_signed_div(
+                                    left_val.into_int_value(),
+                                    right_val.into_int_value(),
+                                    "div",
+                                )
+                                .unwrap()
+                                .into())
                         } else {
-                            Ok(self.builder.build_float_div(left_val.into_float_value(), right_val.into_float_value(), "fdiv").unwrap().into())
+                            Ok(self
+                                .builder
+                                .build_float_div(
+                                    left_val.into_float_value(),
+                                    right_val.into_float_value(),
+                                    "fdiv",
+                                )
+                                .unwrap()
+                                .into())
                         }
                     }
                     BinOp::Equal => {
                         if left_val.get_type().is_int_type() {
-                            let cmp = self.builder.build_int_compare(IntPredicate::EQ, left_val.into_int_value(), right_val.into_int_value(), "eq").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_int_compare(
+                                    IntPredicate::EQ,
+                                    left_val.into_int_value(),
+                                    right_val.into_int_value(),
+                                    "eq",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         } else {
-                            let cmp = self.builder.build_float_compare(FloatPredicate::OEQ, left_val.into_float_value(), right_val.into_float_value(), "feq").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_float_compare(
+                                    FloatPredicate::OEQ,
+                                    left_val.into_float_value(),
+                                    right_val.into_float_value(),
+                                    "feq",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         }
                     }
                     BinOp::NotEqual => {
                         if left_val.get_type().is_int_type() {
-                            let cmp = self.builder.build_int_compare(IntPredicate::NE, left_val.into_int_value(), right_val.into_int_value(), "ne").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_int_compare(
+                                    IntPredicate::NE,
+                                    left_val.into_int_value(),
+                                    right_val.into_int_value(),
+                                    "ne",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         } else {
-                            let cmp = self.builder.build_float_compare(FloatPredicate::ONE, left_val.into_float_value(), right_val.into_float_value(), "fne").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_float_compare(
+                                    FloatPredicate::ONE,
+                                    left_val.into_float_value(),
+                                    right_val.into_float_value(),
+                                    "fne",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         }
                     }
                     BinOp::LessThan => {
                         if left_val.get_type().is_int_type() {
-                            let cmp = self.builder.build_int_compare(IntPredicate::SLT, left_val.into_int_value(), right_val.into_int_value(), "lt").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_int_compare(
+                                    IntPredicate::SLT,
+                                    left_val.into_int_value(),
+                                    right_val.into_int_value(),
+                                    "lt",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         } else {
-                            let cmp = self.builder.build_float_compare(FloatPredicate::OLT, left_val.into_float_value(), right_val.into_float_value(), "flt").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_float_compare(
+                                    FloatPredicate::OLT,
+                                    left_val.into_float_value(),
+                                    right_val.into_float_value(),
+                                    "flt",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         }
                     }
                     BinOp::GreaterThan => {
                         if left_val.get_type().is_int_type() {
-                            let cmp = self.builder.build_int_compare(IntPredicate::SGT, left_val.into_int_value(), right_val.into_int_value(), "gt").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_int_compare(
+                                    IntPredicate::SGT,
+                                    left_val.into_int_value(),
+                                    right_val.into_int_value(),
+                                    "gt",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         } else {
-                            let cmp = self.builder.build_float_compare(FloatPredicate::OGT, left_val.into_float_value(), right_val.into_float_value(), "fgt").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_float_compare(
+                                    FloatPredicate::OGT,
+                                    left_val.into_float_value(),
+                                    right_val.into_float_value(),
+                                    "fgt",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         }
                     }
                     BinOp::LessEqual => {
                         if left_val.get_type().is_int_type() {
-                            let cmp = self.builder.build_int_compare(IntPredicate::SLE, left_val.into_int_value(), right_val.into_int_value(), "le").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_int_compare(
+                                    IntPredicate::SLE,
+                                    left_val.into_int_value(),
+                                    right_val.into_int_value(),
+                                    "le",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         } else {
-                            let cmp = self.builder.build_float_compare(FloatPredicate::OLE, left_val.into_float_value(), right_val.into_float_value(), "fle").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_float_compare(
+                                    FloatPredicate::OLE,
+                                    left_val.into_float_value(),
+                                    right_val.into_float_value(),
+                                    "fle",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         }
                     }
                     BinOp::GreaterEqual => {
                         if left_val.get_type().is_int_type() {
-                            let cmp = self.builder.build_int_compare(IntPredicate::SGE, left_val.into_int_value(), right_val.into_int_value(), "ge").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_int_compare(
+                                    IntPredicate::SGE,
+                                    left_val.into_int_value(),
+                                    right_val.into_int_value(),
+                                    "ge",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         } else {
-                            let cmp = self.builder.build_float_compare(FloatPredicate::OGE, left_val.into_float_value(), right_val.into_float_value(), "fge").unwrap();
-                            Ok(self.builder.build_int_z_extend(cmp, self.context.i64_type(), "bool_ext").unwrap().into())
+                            let cmp = self
+                                .builder
+                                .build_float_compare(
+                                    FloatPredicate::OGE,
+                                    left_val.into_float_value(),
+                                    right_val.into_float_value(),
+                                    "fge",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
                         }
                     }
                 }
@@ -339,10 +593,17 @@ impl<'ctx> CodeGenerator<'ctx> {
             Expr::Call { name, args } => {
                 // For simplicity, assume function exists
                 let function = self.module.get_function(name).unwrap();
-                let arg_values: Vec<BasicMetadataValueEnum> = args.iter()
+                let arg_values: Vec<BasicMetadataValueEnum> = args
+                    .iter()
                     .map(|arg| self.generate_expr(arg).map(|v| v.into()))
                     .collect::<Result<_, _>>()?;
-                Ok(self.builder.build_call(function, &arg_values, "call").unwrap().try_as_basic_value().left().unwrap())
+                Ok(self
+                    .builder
+                    .build_call(function, &arg_values, "call")
+                    .unwrap()
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap())
             }
         }
     }
@@ -367,8 +628,8 @@ pub fn generate_ir(program: &Program) -> Result<String, CodegenError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::parse;
     use crate::lexer::lex;
+    use crate::parser::parse;
 
     #[test]
     fn test_generate_simple_function() {

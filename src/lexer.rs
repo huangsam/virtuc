@@ -18,8 +18,8 @@
 //! Uses the `logos` procedural macro to define token patterns and generate
 //! the lexer automatically. Handles whitespace, comments, and error recovery.
 
-use logos::Logos;
 use crate::error::LexerError;
+use logos::Logos;
 
 /// Represents the tokens produced by the lexer.
 #[derive(Logos, Debug, PartialEq, Clone)]

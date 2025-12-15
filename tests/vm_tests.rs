@@ -8,7 +8,7 @@ fn run_vm(source: &str) -> Value {
     let ast = parse(&tokens).expect("Parsing failed");
     let errors = analyze(&ast);
     assert!(errors.is_empty(), "Semantic errors: {:?}", errors);
-    
+
     let mut vm = VM::new(&ast);
     vm.run().expect("VM execution failed")
 }

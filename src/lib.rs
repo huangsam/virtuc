@@ -21,9 +21,9 @@ pub mod parser;
 pub mod semantic;
 pub mod vm;
 
+use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::fs;
 
 /// Compiles a C subset source string to an executable at the specified output path.
 ///
@@ -45,7 +45,8 @@ pub fn compile(source: &str, output: &Path) -> Result<(), Box<dyn std::error::Er
     // Semantic analysis
     let errors = semantic::analyze(&ast);
     if !errors.is_empty() {
-        let error_msg = errors.iter()
+        let error_msg = errors
+            .iter()
             .map(|e| e.to_string())
             .collect::<Vec<_>>()
             .join("\n");

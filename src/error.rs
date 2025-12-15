@@ -105,7 +105,11 @@ impl fmt::Display for SemanticError {
                 write!(f, "Undefined function: {}", name)
             }
             SemanticError::WrongArgumentCount(func, expected, got) => {
-                write!(f, "Wrong number of arguments for {}: expected {}, got {}", func, expected, got)
+                write!(
+                    f,
+                    "Wrong number of arguments for {}: expected {}, got {}",
+                    func, expected, got
+                )
             }
             SemanticError::ReturnTypeMismatch(msg) => {
                 write!(f, "Return type mismatch: {}", msg)

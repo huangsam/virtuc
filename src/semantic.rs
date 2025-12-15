@@ -16,9 +16,9 @@
 //! Maintains scoped symbol tables for variables, functions, and types.
 //! Handles nested scopes for blocks, functions, and control structures.
 
-use std::collections::HashMap;
 use crate::ast::*;
 use crate::error::SemanticError;
+use std::collections::HashMap;
 
 /// Represents the semantic analyzer.
 pub struct SemanticAnalyzer {
@@ -60,9 +60,11 @@ impl SemanticAnalyzer {
         for function in &program.functions {
             let param_types: Vec<Type> = function.params.iter().map(|(ty, _)| *ty).collect();
             if self.functions.contains_key(&function.name) {
-                self.errors.push(SemanticError::DuplicateVariable(function.name.clone()));
+                self.errors
+                    .push(SemanticError::DuplicateVariable(function.name.clone()));
             } else {
-                self.functions.insert(function.name.clone(), (function.return_ty, param_types));
+                self.functions
+                    .insert(function.name.clone(), (function.return_ty, param_types));
             }
         }
     }
@@ -89,13 +91,17 @@ impl SemanticAnalyzer {
         match stmt {
             Stmt::Declaration { ty, name, init } => {
                 if self.scopes.last().unwrap().contains_key(name) {
-                    self.errors.push(SemanticError::DuplicateVariable(name.clone()));
+                    self.errors
+                        .push(SemanticError::DuplicateVariable(name.clone()));
                 } else {
                     self.scopes.last_mut().unwrap().insert(name.clone(), *ty);
                     if let Some(expr) = init {
                         let expr_ty = self.check_expr(expr);
                         if expr_ty != Some(*ty) {
-                            self.errors.push(SemanticError::TypeMismatch(format!("Cannot assign {:?} to {:?}", expr_ty, ty)));
+                            self.errors.push(SemanticError::TypeMismatch(format!(
+                                "Cannot assign {:?} to {:?}",
+                                expr_ty, ty
+                            )));
                         }
                     }
                 }
@@ -104,10 +110,14 @@ impl SemanticAnalyzer {
                 let expr_ty = self.check_expr(expr);
                 if let Some(var_ty) = self.lookup_variable(name) {
                     if expr_ty != Some(var_ty) {
-                        self.errors.push(SemanticError::TypeMismatch(format!("Cannot assign {:?} to {:?}", expr_ty, var_ty)));
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Cannot assign {:?} to {:?}",
+                            expr_ty, var_ty
+                        )));
                     }
                 } else {
-                    self.errors.push(SemanticError::UndefinedVariable(name.clone()));
+                    self.errors
+                        .push(SemanticError::UndefinedVariable(name.clone()));
                 }
             }
             Stmt::Return(expr) => {
@@ -126,14 +136,21 @@ impl SemanticAnalyzer {
             Stmt::If { cond, then, else_ } => {
                 let cond_ty = self.check_expr(cond);
                 if cond_ty != Some(Type::Int) {
-                    self.errors.push(SemanticError::TypeMismatch("Condition must be int".to_string()));
+                    self.errors.push(SemanticError::TypeMismatch(
+                        "Condition must be int".to_string(),
+                    ));
                 }
                 self.check_stmt(then);
                 if let Some(else_stmt) = else_ {
                     self.check_stmt(else_stmt);
                 }
             }
-            Stmt::For { init, cond, update, body } => {
+            Stmt::For {
+                init,
+                cond,
+                update,
+                body,
+            } => {
                 self.scopes.push(HashMap::new());
                 if let Some(init_stmt) = init {
                     self.check_stmt(init_stmt);
@@ -141,7 +158,9 @@ impl SemanticAnalyzer {
                 if let Some(cond_expr) = cond {
                     let cond_ty = self.check_expr(cond_expr);
                     if cond_ty != Some(Type::Int) {
-                        self.errors.push(SemanticError::TypeMismatch("Condition must be int".to_string()));
+                        self.errors.push(SemanticError::TypeMismatch(
+                            "Condition must be int".to_string(),
+                        ));
                     }
                 }
                 if let Some(update_expr) = update {
@@ -167,7 +186,8 @@ impl SemanticAnalyzer {
                 if let Some(ty) = self.lookup_variable(name) {
                     Some(ty)
                 } else {
-                    self.errors.push(SemanticError::UndefinedVariable(name.clone()));
+                    self.errors
+                        .push(SemanticError::UndefinedVariable(name.clone()));
                     None
                 }
             }
@@ -179,15 +199,24 @@ impl SemanticAnalyzer {
                         if left_ty == right_ty && left_ty.is_some() {
                             left_ty
                         } else {
-                            self.errors.push(SemanticError::TypeMismatch("Arithmetic operands must have same type".to_string()));
+                            self.errors.push(SemanticError::TypeMismatch(
+                                "Arithmetic operands must have same type".to_string(),
+                            ));
                             None
                         }
                     }
-                    BinOp::Equal | BinOp::NotEqual | BinOp::LessThan | BinOp::GreaterThan | BinOp::LessEqual | BinOp::GreaterEqual => {
+                    BinOp::Equal
+                    | BinOp::NotEqual
+                    | BinOp::LessThan
+                    | BinOp::GreaterThan
+                    | BinOp::LessEqual
+                    | BinOp::GreaterEqual => {
                         if left_ty == right_ty && left_ty.is_some() {
                             Some(Type::Int) // Comparisons return int
                         } else {
-                            self.errors.push(SemanticError::TypeMismatch("Comparison operands must have same type".to_string()));
+                            self.errors.push(SemanticError::TypeMismatch(
+                                "Comparison operands must have same type".to_string(),
+                            ));
                             None
                         }
                     }
@@ -197,18 +226,26 @@ impl SemanticAnalyzer {
                 let func_info = self.functions.get(name).cloned();
                 if let Some((ret_ty, param_types)) = func_info {
                     if args.len() != param_types.len() {
-                        self.errors.push(SemanticError::WrongArgumentCount(name.clone(), param_types.len(), args.len()));
+                        self.errors.push(SemanticError::WrongArgumentCount(
+                            name.clone(),
+                            param_types.len(),
+                            args.len(),
+                        ));
                         return Some(ret_ty);
                     }
                     for (i, arg) in args.iter().enumerate() {
                         let arg_ty = self.check_expr(arg);
                         if arg_ty != Some(param_types[i]) {
-                            self.errors.push(SemanticError::TypeMismatch(format!("Argument {} type mismatch", i)));
+                            self.errors.push(SemanticError::TypeMismatch(format!(
+                                "Argument {} type mismatch",
+                                i
+                            )));
                         }
                     }
                     Some(ret_ty)
                 } else {
-                    self.errors.push(SemanticError::UndefinedFunction(name.clone()));
+                    self.errors
+                        .push(SemanticError::UndefinedFunction(name.clone()));
                     None
                 }
             }
@@ -235,8 +272,8 @@ pub fn analyze(program: &Program) -> Vec<SemanticError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::parse;
     use crate::lexer::lex;
+    use crate::parser::parse;
 
     #[test]
     fn test_valid_function() {

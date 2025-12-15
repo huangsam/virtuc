@@ -346,7 +346,8 @@ mod tests {
 
     #[test]
     fn test_parse_function() {
-        let tokens = lex("int add(int a, int b) { return a + b; } int main() { return 0; }").unwrap();
+        let tokens =
+            lex("int add(int a, int b) { return a + b; } int main() { return 0; }").unwrap();
         let ast = parse(&tokens).unwrap();
         assert_eq!(ast.functions.len(), 2);
         let func = &ast.functions[0];
