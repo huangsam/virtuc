@@ -20,6 +20,8 @@ jobs:
         run: |
           apt-get update
           apt-get install -y llvm-17 clang-17 libpolly-17-dev libc++-17-dev libc++abi-17-dev
+          # Create symlink for clang so the tests can find it
+          ln -sf /usr/bin/clang-17 /usr/bin/clang
 
       - name: Set Environment Variables
         run: |
