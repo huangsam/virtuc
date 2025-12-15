@@ -23,6 +23,7 @@ use inkwell::module::Module;
 use inkwell::types::{BasicType, BasicTypeEnum, BasicMetadataTypeEnum};
 use inkwell::values::{BasicValueEnum, PointerValue, BasicMetadataValueEnum};
 use inkwell::{IntPredicate, FloatPredicate};
+use inkwell::targets::{Target, InitializationConfig, TargetMachine};
 use std::collections::HashMap;
 
 use crate::ast::*;
@@ -40,7 +41,15 @@ pub struct CodeGenerator<'ctx> {
 impl<'ctx> CodeGenerator<'ctx> {
     /// Creates a new code generator.
     pub fn new(context: &'ctx Context) -> Self {
+        // Initialize native target to ensure we can get the default triple
+        Target::initialize_native(&InitializationConfig::default()).ok();
+
         let module = context.create_module("virtuc");
+
+        // Set the target triple to the host machine's triple
+        let triple = TargetMachine::get_default_triple();
+        module.set_triple(&triple);
+
         let builder = context.create_builder();
         Self {
             context,

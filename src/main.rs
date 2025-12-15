@@ -41,6 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source = fs::read_to_string(&args.input)?;
 
     // Determine output file
+    // Note: Defaulting to ".out" extension is tailored towards macOS and Linux systems.
+    // Windows users should explicitly specify an output file with ".exe" extension.
     let output_str = args.output.unwrap_or_else(|| {
         args.input.trim_end_matches(".c").to_string() + ".out"
     });

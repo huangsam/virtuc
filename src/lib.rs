@@ -62,7 +62,12 @@ pub fn compile(source: &str, output: &Path) -> Result<(), Box<dyn std::error::Er
 
     // Compile IR to executable using clang
     let status = Command::new("clang")
-        .args(&[ir_file.to_str().unwrap(), "-o", output.to_str().unwrap()])
+        .args(&[
+            ir_file.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "-Wno-override-module",
+        ])
         .status()?;
 
     if !status.success() {
