@@ -22,8 +22,8 @@ use std::collections::HashMap;
 
 /// Represents the semantic analyzer.
 pub struct SemanticAnalyzer {
-    /// Global function symbols: name -> (return_type, param_types)
-    functions: HashMap<String, (Type, Vec<Type>)>,
+    /// Global function symbols: name -> (return_type, param_types, is_variadic)
+    functions: HashMap<String, (Type, Vec<Type>, bool)>,
     /// Stack of scopes for variables: each scope is name -> type
     scopes: Vec<HashMap<String, Type>>,
     /// Collected errors
@@ -64,7 +64,7 @@ impl SemanticAnalyzer {
                     .push(SemanticError::DuplicateVariable(function.name.clone()));
             } else {
                 self.functions
-                    .insert(function.name.clone(), (function.return_ty, param_types));
+                    .insert(function.name.clone(), (function.return_ty, param_types, false));
             }
         }
         for extern_func in &program.extern_functions {
@@ -73,7 +73,7 @@ impl SemanticAnalyzer {
                     .push(SemanticError::DuplicateVariable(extern_func.name.clone()));
             } else {
                 self.functions
-                    .insert(extern_func.name.clone(), (extern_func.return_ty, extern_func.param_types.clone()));
+                    .insert(extern_func.name.clone(), (extern_func.return_ty, extern_func.param_types.clone(), extern_func.is_variadic));
             }
         }
     }
@@ -219,8 +219,17 @@ impl SemanticAnalyzer {
             }
             Expr::Call { name, args } => {
                 let func_info = self.functions.get(name).cloned();
-                if let Some((ret_ty, param_types)) = func_info {
-                    if args.len() != param_types.len() {
+                if let Some((ret_ty, param_types, is_variadic)) = func_info {
+                    if !is_variadic {
+                        if args.len() != param_types.len() {
+                            self.errors.push(SemanticError::WrongArgumentCount(
+                                name.clone(),
+                                param_types.len(),
+                                args.len(),
+                            ));
+                            return Some(ret_ty);
+                        }
+                    } else if args.len() < param_types.len() {
                         self.errors.push(SemanticError::WrongArgumentCount(
                             name.clone(),
                             param_types.len(),
@@ -228,7 +237,7 @@ impl SemanticAnalyzer {
                         ));
                         return Some(ret_ty);
                     }
-                    for (i, arg) in args.iter().enumerate() {
+                    for (i, arg) in args.iter().enumerate().take(param_types.len()) {
                         let arg_ty = self.check_expr(arg);
                         if arg_ty != Some(param_types[i]) {
                             self.errors.push(SemanticError::TypeMismatch(format!(

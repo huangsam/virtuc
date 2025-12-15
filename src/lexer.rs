@@ -131,6 +131,10 @@ pub enum Token {
     /// Right brace
     #[token("}")]
     RBrace,
+
+    /// Ellipsis for variadic functions
+    #[token("...")]
+    Ellipsis,
 }
 
 /// Lexes the input source code into a vector of tokens.

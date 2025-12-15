@@ -84,7 +84,7 @@ impl<'ctx> CodeGenerator<'ctx> {
             .collect();
         let fn_type = self
             .llvm_type(extern_func.return_ty)
-            .fn_type(&param_types, false);
+            .fn_type(&param_types, extern_func.is_variadic);
         self.module.add_function(&extern_func.name, fn_type, None);
         Ok(())
     }

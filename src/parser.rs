@@ -317,24 +317,44 @@ fn parse_param(input: &[Token]) -> IResult<&[Token], (Type, String)> {
     tuple((parse_type, parse_identifier))(input)
 }
 
-/// Parse an extern function: extern type identifier(types);
+fn parse_extern_param_list(input: &[Token]) -> IResult<&[Token], (Vec<Type>, bool)> {
+    let mut types = vec![];
+    let mut input = input;
+    loop {
+        if let Ok((rest, ty)) = parse_type(input) {
+            types.push(ty);
+            input = rest;
+            if let Some(&Token::Comma) = input.first() {
+                input = &input[1..];
+                // continue
+            } else {
+                return Ok((input, (types, false)));
+            }
+        } else if let Some(&Token::Ellipsis) = input.first() {
+            return Ok((&input[1..], (types, true)));
+        } else {
+            return Err(nom::Err::Error(Error::new(input, ErrorKind::Tag)));
+        }
+    }
+}
+
+/// Parse an extern function: extern type identifier(types ...); or extern type identifier(types);
 fn parse_extern_function(input: &[Token]) -> IResult<&[Token], ExternFunction> {
     map(
         tuple((
             token(Token::Extern),
             parse_type,
             parse_identifier,
-            delimited(
-                token(Token::LParen),
-                separated_list0(token(Token::Comma), parse_type),
-                token(Token::RParen),
-            ),
+            token(Token::LParen),
+            parse_extern_param_list,
+            token(Token::RParen),
             token(Token::Semicolon),
         )),
-        |(_, return_ty, name, param_types, _)| ExternFunction {
+        |(_, return_ty, name, _, (param_types, is_variadic), _, _)| ExternFunction {
             return_ty,
             name,
             param_types,
+            is_variadic,
         },
     )(input)
 }
@@ -437,5 +457,17 @@ mod tests {
         assert_eq!(extern_func.name, "printf");
         assert_eq!(extern_func.return_ty, Type::Int);
         assert_eq!(extern_func.param_types, vec![Type::Int, Type::Int]);
+        assert_eq!(extern_func.is_variadic, false);
+    }
+
+    #[test]
+    fn test_parse_extern_function_variadic() {
+        let tokens = lex("extern int printf(int, ...); int main() { return 0; }").unwrap();
+        let ast = parse(&tokens).unwrap();
+        assert_eq!(ast.extern_functions.len(), 1);
+        let extern_func = &ast.extern_functions[0];
+        assert_eq!(extern_func.name, "printf");
+        assert_eq!(extern_func.param_types, vec![Type::Int]);
+        assert_eq!(extern_func.is_variadic, true);
     }
 }

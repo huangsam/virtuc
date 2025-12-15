@@ -130,8 +130,10 @@ pub struct ExternFunction {
     pub return_ty: Type,
     /// Name of the function
     pub name: String,
-    /// Parameter types
+    /// Parameter types (fixed parameters)
     pub param_types: Vec<Type>,
+    /// Whether the function is variadic
+    pub is_variadic: bool,
 }
 
 /// Represents the top-level program.
