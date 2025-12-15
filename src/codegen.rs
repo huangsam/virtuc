@@ -594,8 +594,7 @@ impl<'ctx> CodeGenerator<'ctx> {
                     .build_call(function, &arg_values, "call")
                     .unwrap()
                     .try_as_basic_value()
-                    .left()
-                    .unwrap())
+                    .unwrap_basic())
             }
             Expr::Assignment { name, value } => {
                 let val = self.generate_expr(value)?;
