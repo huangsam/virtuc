@@ -1,5 +1,7 @@
 # VirtuC
 
+[![License](https://img.shields.io/github/license/huangsam/virtuc)](https://github.com/huangsam/virtuc/blob/main/LICENSE)
+
 A compiler for a subset of the C programming language, implemented in Rust. VirtuC supports lexical analysis, parsing, semantic analysis, code generation to LLVM IR, and execution via a custom virtual machine.
 
 ## Features
