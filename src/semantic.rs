@@ -106,20 +106,6 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            Stmt::Assignment { name, expr } => {
-                let expr_ty = self.check_expr(expr);
-                if let Some(var_ty) = self.lookup_variable(name) {
-                    if expr_ty != Some(var_ty) {
-                        self.errors.push(SemanticError::TypeMismatch(format!(
-                            "Cannot assign {:?} to {:?}",
-                            expr_ty, var_ty
-                        )));
-                    }
-                } else {
-                    self.errors
-                        .push(SemanticError::UndefinedVariable(name.clone()));
-                }
-            }
             Stmt::Return(expr) => {
                 if let Some(e) = expr {
                     self.check_expr(e);
@@ -246,6 +232,22 @@ impl SemanticAnalyzer {
                 } else {
                     self.errors
                         .push(SemanticError::UndefinedFunction(name.clone()));
+                    None
+                }
+            }
+            Expr::Assignment { name, value } => {
+                let value_ty = self.check_expr(value);
+                if let Some(var_ty) = self.lookup_variable(name) {
+                    if value_ty != Some(var_ty) {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Cannot assign {:?} to {:?}",
+                            value_ty, var_ty
+                        )));
+                    }
+                    Some(var_ty)
+                } else {
+                    self.errors
+                        .push(SemanticError::UndefinedVariable(name.clone()));
                     None
                 }
             }

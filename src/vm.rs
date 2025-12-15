@@ -53,6 +53,8 @@ pub enum Opcode {
     Return,
     /// Pop a value from the stack (used for expression statements).
     Pop,
+    /// Duplicate the top value on the stack.
+    Dup,
     /// Halt execution.
     Halt,
 }
@@ -181,6 +183,13 @@ impl VM {
                 Opcode::Pop => {
                     self.stack.pop();
                 }
+                Opcode::Dup => {
+                    if let Some(val) = self.stack.last() {
+                        self.stack.push(*val);
+                    } else {
+                        return Err("Stack underflow".to_string());
+                    }
+                }
                 Opcode::Halt => break,
             }
         }
@@ -285,10 +294,6 @@ impl Compiler {
                     self.code.push(Opcode::StoreVar(name.clone()));
                 }
             }
-            Stmt::Assignment { name, expr } => {
-                self.compile_expr(expr);
-                self.code.push(Opcode::StoreVar(name.clone()));
-            }
             Stmt::Return(expr) => {
                 if let Some(e) = expr {
                     self.compile_expr(e);
@@ -386,6 +391,13 @@ impl Compiler {
                     self.compile_expr(arg);
                 }
                 self.code.push(Opcode::Call(name.clone(), args.len()));
+            }
+            Expr::Assignment { name, value } => {
+                self.compile_expr(value);
+                // Duplicate the value so one copy is stored and one remains on the stack
+                // as the result of the assignment expression.
+                self.code.push(Opcode::Dup);
+                self.code.push(Opcode::StoreVar(name.clone()));
             }
         }
     }

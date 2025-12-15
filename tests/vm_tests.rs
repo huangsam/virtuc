@@ -30,7 +30,7 @@ fn test_vm_function_call() {
         int add(int a, int b) {
             return a + b;
         }
-        
+
         int main() {
             return add(10, 20);
         }
@@ -60,9 +60,8 @@ fn test_vm_loop() {
     let source = r#"
         int main() {
             int sum = 0;
-            for (int i = 0; i < 5; ) {
+            for (int i = 0; i < 5; i = i + 1) {
                 sum = sum + i;
-                i = i + 1;
             }
             return sum;
         }
@@ -80,7 +79,7 @@ fn test_vm_recursion() {
             }
             return fib(n - 1) + fib(n - 2);
         }
-        
+
         int main() {
             return fib(6);
         }

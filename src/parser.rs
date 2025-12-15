@@ -187,9 +187,27 @@ fn parse_comparison(input: &[Token]) -> IResult<&[Token], Expr> {
     Ok((input, expr))
 }
 
+/// Parse an assignment expression: identifier = expr
+fn parse_assignment_expr(input: &[Token]) -> IResult<&[Token], Expr> {
+    alt((
+        map(
+            tuple((
+                parse_identifier,
+                token(Token::Assign),
+                parse_expr,
+            )),
+            |(name, _, value)| Expr::Assignment {
+                name,
+                value: Box::new(value),
+            },
+        ),
+        parse_comparison,
+    ))(input)
+}
+
 /// Parse expression (top level)
 fn parse_expr(input: &[Token]) -> IResult<&[Token], Expr> {
-    parse_comparison(input)
+    parse_assignment_expr(input)
 }
 
 /// Parse a declaration: type identifier (= expr)? ;
@@ -202,19 +220,6 @@ fn parse_declaration(input: &[Token]) -> IResult<&[Token], Stmt> {
             token(Token::Semicolon),
         )),
         |(ty, name, init, _)| Stmt::Declaration { ty, name, init },
-    )(input)
-}
-
-/// Parse an assignment: identifier = expr ;
-fn parse_assignment(input: &[Token]) -> IResult<&[Token], Stmt> {
-    map(
-        tuple((
-            parse_identifier,
-            token(Token::Assign),
-            parse_expr,
-            token(Token::Semicolon),
-        )),
-        |(name, _, expr, _)| Stmt::Assignment { name, expr },
     )(input)
 }
 
@@ -267,7 +272,11 @@ fn parse_for(input: &[Token]) -> IResult<&[Token], Stmt> {
             delimited(
                 token(Token::LParen),
                 tuple((
-                    opt(parse_declaration), // parse_declaration already includes the semicolon
+                    alt((
+                        map(parse_declaration, |s| Some(Box::new(s))),
+                        map(parse_expr_stmt, |s| Some(Box::new(s))),
+                        map(token(Token::Semicolon), |_| None),
+                    )),
                     opt(terminated(parse_expr, token(Token::Semicolon))),
                     opt(parse_expr),
                 )),
@@ -276,7 +285,7 @@ fn parse_for(input: &[Token]) -> IResult<&[Token], Stmt> {
             parse_stmt,
         )),
         |(_, (init, cond, update), body)| Stmt::For {
-            init: init.map(Box::new),
+            init,
             cond,
             update,
             body: Box::new(body),
@@ -293,7 +302,6 @@ fn parse_expr_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
 fn parse_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
     alt((
         parse_declaration,
-        parse_assignment,
         parse_return,
         parse_if,
         parse_for,

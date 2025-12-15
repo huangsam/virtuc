@@ -143,14 +143,6 @@ impl<'ctx> CodeGenerator<'ctx> {
                     self.builder.build_store(alloca, value).unwrap();
                 }
             }
-            Stmt::Assignment { name, expr } => {
-                let value = self.generate_expr(expr)?;
-                if let Some((ptr, _)) = self.variables.get(name) {
-                    self.builder.build_store(*ptr, value).unwrap();
-                } else {
-                    return Err(CodegenError(format!("Undefined variable: {}", name)));
-                }
-            }
             Stmt::Return(expr) => {
                 if let Some(e) = expr {
                     let value = self.generate_expr(e)?;
@@ -604,6 +596,15 @@ impl<'ctx> CodeGenerator<'ctx> {
                     .try_as_basic_value()
                     .left()
                     .unwrap())
+            }
+            Expr::Assignment { name, value } => {
+                let val = self.generate_expr(value)?;
+                if let Some((ptr, _)) = self.variables.get(name) {
+                    self.builder.build_store(*ptr, val).unwrap();
+                    Ok(val)
+                } else {
+                    Err(CodegenError(format!("Undefined variable: {}", name)))
+                }
             }
         }
     }

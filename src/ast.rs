@@ -76,6 +76,8 @@ pub enum Expr {
     },
     /// Function call
     Call { name: String, args: Vec<Expr> },
+    /// Assignment expression
+    Assignment { name: String, value: Box<Expr> },
 }
 
 /// Represents statements in the AST.
@@ -87,8 +89,6 @@ pub enum Stmt {
         name: String,
         init: Option<Expr>,
     },
-    /// Variable assignment
-    Assignment { name: String, expr: Expr },
     /// Return statement
     Return(Option<Expr>),
     /// Block of statements
