@@ -77,10 +77,7 @@ pub enum Expr {
         right: Box<Expr>,
     },
     /// Function call
-    Call {
-        name: String,
-        args: Vec<Expr>,
-    },
+    Call { name: String, args: Vec<Expr> },
 }
 
 /// Represents statements in the AST.
@@ -93,10 +90,7 @@ pub enum Stmt {
         init: Option<Expr>,
     },
     /// Variable assignment
-    Assignment {
-        name: String,
-        expr: Expr,
-    },
+    Assignment { name: String, expr: Expr },
     /// Return statement
     Return(Option<Expr>),
     /// Block of statements
@@ -148,13 +142,11 @@ mod tests {
             return_ty: Type::Int,
             name: "add".to_string(),
             params: vec![(Type::Int, "a".to_string()), (Type::Int, "b".to_string())],
-            body: Stmt::Block(vec![
-                Stmt::Return(Some(Expr::Binary {
-                    left: Box::new(Expr::Identifier("a".to_string())),
-                    op: BinOp::Plus,
-                    right: Box::new(Expr::Identifier("b".to_string())),
-                })),
-            ]),
+            body: Stmt::Block(vec![Stmt::Return(Some(Expr::Binary {
+                left: Box::new(Expr::Identifier("a".to_string())),
+                op: BinOp::Plus,
+                right: Box::new(Expr::Identifier("b".to_string())),
+            }))]),
         };
         // Basic construction test
         assert_eq!(func.name, "add");

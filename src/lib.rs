@@ -13,10 +13,10 @@
 //! 4. **Code Generation**: AST → LLVM Intermediate Representation (IR)
 //! 5. **Execution**: IR → Native executable or bytecode for VM
 
+pub mod ast;
+pub mod codegen;
 pub mod error;
 pub mod lexer;
 pub mod parser;
-pub mod ast;
 pub mod semantic;
-pub mod codegen;
 pub mod vm;

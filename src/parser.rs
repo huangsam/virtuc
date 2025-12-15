@@ -23,13 +23,13 @@ use nom::{
     IResult,
     branch::alt,
     combinator::{map, opt},
+    error::{Error, ErrorKind},
     multi::{many0, separated_list0},
     sequence::{delimited, preceded, terminated, tuple},
-    error::{Error, ErrorKind},
 };
 
-use crate::lexer::Token;
 use crate::ast::*;
+use crate::lexer::Token;
 
 /// Helper function to match a specific token
 fn token(expected: Token) -> impl Fn(&[Token]) -> IResult<&[Token], Token> {
@@ -288,10 +288,7 @@ fn parse_for(input: &[Token]) -> IResult<&[Token], Stmt> {
 
 /// Parse an expression statement: expr ;
 fn parse_expr_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
-    map(
-        terminated(parse_expr, token(Token::Semicolon)),
-        Stmt::Expr,
-    )(input)
+    map(terminated(parse_expr, token(Token::Semicolon)), Stmt::Expr)(input)
 }
 
 /// Parse a statement
@@ -336,8 +333,8 @@ fn parse_function(input: &[Token]) -> IResult<&[Token], Function> {
 
 /// Parse the program: functions
 pub fn parse(tokens: &[Token]) -> Result<Program, String> {
-    let (remaining, functions) = many0(parse_function)(tokens)
-        .map_err(|e| format!("Parse error: {:?}", e))?;
+    let (remaining, functions) =
+        many0(parse_function)(tokens).map_err(|e| format!("Parse error: {:?}", e))?;
     if !remaining.is_empty() {
         return Err(format!("Unexpected tokens at end: {:?}", remaining));
     }
@@ -357,7 +354,10 @@ mod tests {
         let func = &ast.functions[0];
         assert_eq!(func.name, "add");
         assert_eq!(func.return_ty, Type::Int);
-        assert_eq!(func.params, vec![(Type::Int, "a".to_string()), (Type::Int, "b".to_string())]);
+        assert_eq!(
+            func.params,
+            vec![(Type::Int, "a".to_string()), (Type::Int, "b".to_string())]
+        );
         // Check body
         if let Stmt::Block(stmts) = &func.body {
             assert_eq!(stmts.len(), 1);
