@@ -63,8 +63,10 @@ impl SemanticAnalyzer {
                 self.errors
                     .push(SemanticError::DuplicateVariable(function.name.clone()));
             } else {
-                self.functions
-                    .insert(function.name.clone(), (function.return_ty, param_types, false));
+                self.functions.insert(
+                    function.name.clone(),
+                    (function.return_ty, param_types, false),
+                );
             }
         }
         for extern_func in &program.extern_functions {
@@ -72,8 +74,14 @@ impl SemanticAnalyzer {
                 self.errors
                     .push(SemanticError::DuplicateVariable(extern_func.name.clone()));
             } else {
-                self.functions
-                    .insert(extern_func.name.clone(), (extern_func.return_ty, extern_func.param_types.clone(), extern_func.is_variadic));
+                self.functions.insert(
+                    extern_func.name.clone(),
+                    (
+                        extern_func.return_ty,
+                        extern_func.param_types.clone(),
+                        extern_func.is_variadic,
+                    ),
+                );
             }
         }
 
@@ -82,10 +90,8 @@ impl SemanticAnalyzer {
             if header == "stdio.h" {
                 // ensure printf is available: extern int printf(string, ...);
                 if !self.functions.contains_key("printf") {
-                    self.functions.insert(
-                        "printf".to_string(),
-                        (Type::Int, vec![Type::String], true),
-                    );
+                    self.functions
+                        .insert("printf".to_string(), (Type::Int, vec![Type::String], true));
                 }
             }
         }

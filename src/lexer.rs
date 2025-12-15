@@ -77,8 +77,6 @@ pub enum Token {
     })]
     StringLiteral(String),
 
-
-
     /// Include directive: #include <header.h>
     #[regex(r"#include\s*<[^>]+>", |lex| {
         let s = lex.slice();
@@ -200,7 +198,11 @@ fn unescape_c_string(s: &str) -> String {
                 Some('x') => {
                     // parse up to two hex digits
                     let hi = chars.next();
-                    let lo = if let Some(_c2) = hi { chars.next() } else { None };
+                    let lo = if let Some(_c2) = hi {
+                        chars.next()
+                    } else {
+                        None
+                    };
                     if let (Some(h), Some(l)) = (hi, lo) {
                         if let (Some(hv), Some(lv)) = (h.to_digit(16), l.to_digit(16)) {
                             let val = (hv * 16 + lv) as u8;
@@ -298,7 +300,11 @@ mod tests {
         let input = r#"int main() { printf("Hello\n"); }"#;
         let tokens = lex(input).unwrap();
         // find StringLiteral token
-        assert!(tokens.iter().any(|t| matches!(t, Token::StringLiteral(s) if s == "Hello\n")));
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(t, Token::StringLiteral(s) if s == "Hello\n"))
+        );
     }
 
     #[test]

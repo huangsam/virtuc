@@ -16,10 +16,10 @@
 pub mod ast;
 pub mod codegen;
 pub mod error;
+pub mod header_registry;
 pub mod lexer;
 pub mod parser;
 pub mod semantic;
-pub mod header_registry;
 
 use std::fs;
 use std::path::Path;
