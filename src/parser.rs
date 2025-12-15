@@ -31,6 +31,7 @@ use crate::lexer::Token;
 
 #[derive(Debug, PartialEq, Clone)]
 enum TopLevel {
+    Include(String),
     Extern(ExternFunction),
     Function(Function),
 }
@@ -361,9 +362,21 @@ fn parse_extern_function(input: &[Token]) -> IResult<&[Token], ExternFunction> {
     )(input)
 }
 
-/// Parse a top-level item: extern function or function definition
+/// Parse an include directive token and return header name
+fn parse_include(input: &[Token]) -> IResult<&[Token], String> {
+    if input.is_empty() {
+        return Err(nom::Err::Error(Error::new(input, ErrorKind::Eof)));
+    }
+    match &input[0] {
+        Token::Include(name) => Ok((&input[1..], name.clone())),
+        _ => Err(nom::Err::Error(Error::new(input, ErrorKind::Tag))),
+    }
+}
+
+/// Parse a top-level item: include, extern function or function definition
 fn parse_top_level(input: &[Token]) -> IResult<&[Token], TopLevel> {
     alt((
+        map(parse_include, TopLevel::Include),
         map(parse_extern_function, TopLevel::Extern),
         map(parse_function, TopLevel::Function),
     ))(input)
@@ -398,15 +411,28 @@ pub fn parse(tokens: &[Token]) -> Result<Program, String> {
     if !remaining.is_empty() {
         return Err(format!("Unexpected tokens at end: {:?}", remaining));
     }
+    let mut includes = Vec::new();
     let mut extern_functions = Vec::new();
     let mut functions = Vec::new();
     for item in items {
         match item {
+            TopLevel::Include(h) => includes.push(h),
             TopLevel::Extern(e) => extern_functions.push(e),
             TopLevel::Function(f) => functions.push(f),
         }
     }
+
+    // Map includes to externs using registry
+    for header in &includes {
+        for ext in crate::header_registry::externs_for_header(header) {
+            if !extern_functions.iter().any(|e| e.name == ext.name) {
+                extern_functions.push(ext);
+            }
+        }
+    }
+
     Ok(Program {
+        includes,
         extern_functions,
         functions,
     })
@@ -471,5 +497,13 @@ mod tests {
         assert_eq!(extern_func.name, "printf");
         assert_eq!(extern_func.param_types, vec![Type::Int]);
         assert_eq!(extern_func.is_variadic, true);
+    }
+
+    #[test]
+    fn test_parse_include() {
+        let tokens = lex("#include <stdio.h> int main() { return 0; }").unwrap();
+        let ast = parse(&tokens).unwrap();
+        assert_eq!(ast.includes.len(), 1);
+        assert_eq!(ast.includes[0], "stdio.h");
     }
 }

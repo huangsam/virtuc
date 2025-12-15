@@ -143,6 +143,8 @@ pub struct ExternFunction {
 /// Represents the top-level program.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Program {
+    /// List of include directives (header names)
+    pub includes: Vec<String>,
     /// List of extern function declarations
     pub extern_functions: Vec<ExternFunction>,
     /// List of function definitions

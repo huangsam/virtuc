@@ -76,6 +76,19 @@ impl SemanticAnalyzer {
                     .insert(extern_func.name.clone(), (extern_func.return_ty, extern_func.param_types.clone(), extern_func.is_variadic));
             }
         }
+
+        // Handle includes: map known headers to builtin externs
+        for header in &program.includes {
+            if header == "stdio.h" {
+                // ensure printf is available: extern int printf(string, ...);
+                if !self.functions.contains_key("printf") {
+                    self.functions.insert(
+                        "printf".to_string(),
+                        (Type::Int, vec![Type::String], true),
+                    );
+                }
+            }
+        }
     }
 
     /// Analyzes a single function.

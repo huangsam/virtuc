@@ -92,3 +92,35 @@ fn test_compile_and_run_with_printf() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Hello, World!"));
 }
+
+#[test]
+fn test_compile_and_run_with_include() {
+    // Setup temp directory
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_include");
+
+    // Source code using include
+    let source = r#"
+        #include <stdio.h>
+
+        int main() {
+            printf("Hello from include!\n");
+            return 7;
+        }
+    "#;
+
+    // Compile
+    compile(source, &output_path).expect("Compilation failed");
+
+    // Run the generated executable and capture output
+    let output = Command::new(&output_path)
+        .output()
+        .expect("failed to run generated executable");
+
+    // Check exit code
+    assert_eq!(output.status.code(), Some(7));
+
+    // Check stdout contains "Hello from include!"
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Hello from include!"));
+}

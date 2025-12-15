@@ -69,8 +69,24 @@ pub enum Token {
     IntLiteral(i64),
 
     /// String literal
-    #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice().to_owned())]
+    #[regex(r#""([^"\\]|\\.)*""#, |lex| {
+        // Strip surrounding quotes and unescape common C-style escapes
+        let s = lex.slice();
+        let inner = &s[1..s.len()-1];
+        unescape_c_string(inner)
+    })]
     StringLiteral(String),
+
+
+
+    /// Include directive: #include <header.h>
+    #[regex(r"#include\s*<[^>]+>", |lex| {
+        let s = lex.slice();
+        let start = s.find('<').map(|i| i+1).unwrap_or(0);
+        let end = s.find('>').unwrap_or(s.len());
+        s[start..end].to_string()
+    })]
+    Include(String),
 
     /// Less than or equal operator
     #[token("<=")]
@@ -168,6 +184,55 @@ pub fn lex(input: &str) -> Result<Vec<Token>, LexerError> {
     Ok(tokens)
 }
 
+// Helper: Unescape a C-style string body (no surrounding quotes)
+fn unescape_c_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some('r') => out.push('\r'),
+                Some('\'') => out.push('\''),
+                Some('"') => out.push('"'),
+                Some('0') => out.push('\0'),
+                Some('x') => {
+                    // parse up to two hex digits
+                    let hi = chars.next();
+                    let lo = if let Some(c2) = hi { chars.next() } else { None };
+                    if let (Some(h), Some(l)) = (hi, lo) {
+                        if let (Some(hv), Some(lv)) = (h.to_digit(16), l.to_digit(16)) {
+                            let val = (hv * 16 + lv) as u8;
+                            out.push(val as char);
+                        } else {
+                            out.push('x');
+                            out.push(h);
+                            out.push(l);
+                        }
+                    } else if let Some(h) = hi {
+                        if let Some(hv) = h.to_digit(16) {
+                            let val = hv as u8;
+                            out.push(val as char);
+                        } else {
+                            out.push('x');
+                            out.push(h);
+                        }
+                    }
+                }
+                Some(other) => {
+                    // Unknown escape, keep as-is
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,6 +291,14 @@ mod tests {
     fn test_invalid_input() {
         let input = "int x = @;";
         assert!(lex(input).is_err());
+    }
+
+    #[test]
+    fn test_string_literal_unescape() {
+        let input = r#"int main() { printf("Hello\n"); }"#;
+        let tokens = lex(input).unwrap();
+        // find StringLiteral token
+        assert!(tokens.iter().any(|t| matches!(t, Token::StringLiteral(s) if s == "Hello\n")));
     }
 
     #[test]
