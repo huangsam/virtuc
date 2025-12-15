@@ -19,16 +19,16 @@ jobs:
       - name: Install System Dependencies
         run: |
           apt-get update
-          apt-get install -y llvm-21 clang-21 libpolly-21-dev libc++-21-dev libc++abi-21-dev
+          apt-get install -y llvm-19 clang-19 libpolly-19-dev libc++-19-dev libc++abi-19-dev
           # Create symlink for clang so the tests can find it
-          ln -sf /usr/bin/clang-21 /usr/bin/clang
+          ln -sf /usr/bin/clang-19 /usr/bin/clang
 
       - name: Set Environment Variables
         run: |
-          echo "LLVM_SYS_210_PREFIX=/usr/lib/llvm-21" >> $GITHUB_ENV
-          echo "LLVM_CONFIG_PATH=/usr/bin/llvm-config-21" >> $GITHUB_ENV
+          echo "LLVM_SYS_190_PREFIX=/usr/lib/llvm-19" >> $GITHUB_ENV
+          echo "LLVM_CONFIG_PATH=/usr/bin/llvm-config-19" >> $GITHUB_ENV
           # CRITICAL: Forces linking against the LLVM C++ standard library (libc++)
-          echo "RUSTFLAGS=-C link-arg=-lc++ -C link-arg=-L/usr/lib/llvm-21/lib" >> $GITHUB_ENV
+          echo "RUSTFLAGS=-C link-arg=-lc++ -C link-arg=-L/usr/lib/llvm-19/lib" >> $GITHUB_ENV
 
       - name: Run build
         run: cargo build
