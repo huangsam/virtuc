@@ -176,6 +176,7 @@ impl SemanticAnalyzer {
             Expr::Literal(lit) => match lit {
                 Literal::Int(_) => Some(Type::Int),
                 Literal::Float(_) => Some(Type::Float),
+                Literal::String(_) => Some(Type::String),
             },
             Expr::Identifier(name) => {
                 if let Some(ty) = self.lookup_variable(name) {

@@ -49,11 +49,12 @@ fn token(expected: Token) -> impl Fn(&[Token]) -> IResult<&[Token], Token> {
     }
 }
 
-/// Parse a type: int | float
+/// Parse a type: int | float | string
 fn parse_type(input: &[Token]) -> IResult<&[Token], Type> {
     alt((
         map(token(Token::Int), |_| Type::Int),
         map(token(Token::Float), |_| Type::Float),
+        map(token(Token::StringType), |_| Type::String),
     ))(input)
 }
 
@@ -76,6 +77,7 @@ fn parse_literal(input: &[Token]) -> IResult<&[Token], Literal> {
     match &input[0] {
         Token::IntLiteral(n) => Ok((&input[1..], Literal::Int(*n))),
         Token::FloatLiteral(f) => Ok((&input[1..], Literal::Float(*f))),
+        Token::StringLiteral(s) => Ok((&input[1..], Literal::String(s.clone()))),
         _ => Err(nom::Err::Error(Error::new(input, ErrorKind::Tag))),
     }
 }

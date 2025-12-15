@@ -23,6 +23,7 @@ use inkwell::module::Module;
 use inkwell::targets::{InitializationConfig, Target, TargetMachine};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
+use inkwell::AddressSpace;
 use inkwell::{FloatPredicate, IntPredicate};
 use std::collections::HashMap;
 
@@ -135,6 +136,11 @@ impl<'ctx> CodeGenerator<'ctx> {
                 Type::Float => {
                     self.builder
                         .build_return(Some(&self.context.f64_type().const_zero()))
+                        .unwrap();
+                }
+                Type::String => {
+                    self.builder
+                        .build_return(Some(&self.context.ptr_type(AddressSpace::default()).const_null()))
                         .unwrap();
                 }
             }
@@ -292,6 +298,10 @@ impl<'ctx> CodeGenerator<'ctx> {
             Expr::Literal(lit) => match lit {
                 Literal::Int(n) => Ok(self.context.i64_type().const_int(*n as u64, false).into()),
                 Literal::Float(f) => Ok(self.context.f64_type().const_float(*f).into()),
+                Literal::String(s) => {
+                    let global = self.builder.build_global_string_ptr(s, "str").map_err(|e| CodegenError(format!("Builder error: {:?}", e)))?;
+                    Ok(global.as_pointer_value().into())
+                }
             },
             Expr::Identifier(name) => {
                 if let Some((ptr, ty)) = self.variables.get(name) {
@@ -630,6 +640,7 @@ impl<'ctx> CodeGenerator<'ctx> {
         match ty {
             Type::Int => self.context.i64_type().into(),
             Type::Float => self.context.f64_type().into(),
+            Type::String => self.context.ptr_type(AddressSpace::default()).into(),
         }
     }
 }

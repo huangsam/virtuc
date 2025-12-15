@@ -60,3 +60,35 @@ fn test_compile_and_run_control_flow() {
     // Check exit code
     assert_eq!(status.code(), Some(1));
 }
+
+#[test]
+fn test_compile_and_run_with_printf() {
+    // Setup temp directory
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_printf");
+
+    // Source code
+    let source = r#"
+        extern int printf(string, ...);
+
+        int main() {
+            printf("Hello, World!\n");
+            return 42;
+        }
+    "#;
+
+    // Compile
+    compile(source, &output_path).expect("Compilation failed");
+
+    // Run the generated executable and capture output
+    let output = Command::new(&output_path)
+        .output()
+        .expect("failed to run generated executable");
+
+    // Check exit code
+    assert_eq!(output.status.code(), Some(42));
+
+    // Check stdout contains "Hello, World!"
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Hello, World!"));
+}

@@ -34,6 +34,10 @@ pub enum Token {
     #[token("float")]
     Float,
 
+    /// String keyword (for const char*)
+    #[token("string")]
+    StringType,
+
     /// If keyword
     #[token("if")]
     If,
@@ -63,6 +67,10 @@ pub enum Token {
     /// Integer literal
     #[regex(r"\d+", |lex| lex.slice().parse::<i64>().unwrap())]
     IntLiteral(i64),
+
+    /// String literal
+    #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice().to_owned())]
+    StringLiteral(String),
 
     /// Less than or equal operator
     #[token("<=")]

@@ -25,6 +25,8 @@ pub enum Type {
     Int,
     /// 64-bit floating-point type
     Float,
+    /// String type (const char*)
+    String,
 }
 
 /// Represents binary operators.
@@ -59,6 +61,8 @@ pub enum Literal {
     Int(i64),
     /// Float literal
     Float(f64),
+    /// String literal
+    String(String),
 }
 
 /// Represents expressions in the AST.
