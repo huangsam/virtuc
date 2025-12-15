@@ -42,7 +42,7 @@ jobs:
 
       # 2. Install LLVM Version
       - name: Install LLVM ${{ env.LLVM_VERSION }}.${{ env.LLVM_VERSION_MINOR }}
-        uses: KyleMayes/install-llvm-action@v1
+        uses: KyleMayes/install-llvm-action@v2
         with:
           # https://github.com/KyleMayes/install-llvm-action/blob/v2/assets.json
           version: ${{ env.LLVM_VERSION }}.${{ env.LLVM_VERSION_MINOR }}
