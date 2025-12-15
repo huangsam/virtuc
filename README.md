@@ -5,7 +5,7 @@
 
 A compiler for a subset of the C programming language, implemented in Rust.
 
-VirtuC supports lexical analysis, parsing, semantic analysis, code generation to LLVM IR, and execution via a custom virtual machine. It compiles C-like code into efficient LLVM intermediate representation for optimization and native execution, while also providing a bytecode interpreter for direct runtime evaluation.
+VirtuC supports lexical analysis, parsing, semantic analysis, code generation to LLVM IR, and execution via a custom virtual machine. It compiles C-like code into efficient LLVM IR for optimization and native execution, with a bytecode interpreter for runtime evaluation.
 
 ## Features
 
