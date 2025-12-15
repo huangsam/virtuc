@@ -16,5 +16,3 @@
 //! Uses `inkwell` to build LLVM IR incrementally. Handles type mapping from
 //! the C subset types to LLVM types, and generates efficient code with
 //! optimizations enabled.
-
-// IR emission using inkwell for LLVM

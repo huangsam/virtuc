@@ -21,5 +21,3 @@
 //!
 //! Could be extended to support just-in-time (JIT) compilation or
 //! additional bytecode optimizations.
-
-// Optional simple VM for bytecode execution

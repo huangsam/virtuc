@@ -18,8 +18,6 @@
 //! lifetime management. Each node includes source location information for
 //! error reporting and debugging.
 
-// AST node definitions
-
 /// Represents the primitive types in the C subset.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {

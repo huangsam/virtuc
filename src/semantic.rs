@@ -15,5 +15,3 @@
 //!
 //! Maintains scoped symbol tables for variables, functions, and types.
 //! Handles nested scopes for blocks, functions, and control structures.
-
-// Type checking and validation

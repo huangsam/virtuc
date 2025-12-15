@@ -17,5 +17,3 @@
 //! Errors implement `std::error::Error` and `std::fmt::Display` for
 //! user-friendly error messages. Each error includes location information
 //! (file, line, column) when possible for better debugging.
-
-// Compiler error types

@@ -17,8 +17,6 @@
 //! Uses `nom`'s combinator approach to build modular parsers for each
 //! grammar rule. Provides good error messages and recovery for syntax errors.
 
-// AST building using nom crate
-
 use nom::{
     IResult,
     branch::alt,
