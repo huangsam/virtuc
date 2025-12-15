@@ -19,7 +19,7 @@
 //! error reporting and debugging.
 
 /// Represents the primitive types in the C subset.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Type {
     /// 64-bit integer type
     Int,
@@ -28,7 +28,7 @@ pub enum Type {
 }
 
 /// Represents binary operators.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum BinOp {
     /// Addition
     Plus,

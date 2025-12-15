@@ -19,6 +19,7 @@
 //! the lexer automatically. Handles whitespace, comments, and error recovery.
 
 use logos::Logos;
+use crate::error::LexerError;
 
 /// Represents the tokens produced by the lexer.
 #[derive(Logos, Debug, PartialEq, Clone)]
@@ -129,18 +130,6 @@ pub enum Token {
     #[token("}")]
     RBrace,
 }
-
-/// Error type for the lexer.
-#[derive(Debug, PartialEq, Clone)]
-pub struct LexerError;
-
-impl std::fmt::Display for LexerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Invalid token encountered")
-    }
-}
-
-impl std::error::Error for LexerError {}
 
 /// Lexes the input source code into a vector of tokens.
 ///
