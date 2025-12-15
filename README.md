@@ -7,12 +7,10 @@ A compiler for a subset of the C programming language, implemented in Rust. Virt
 
 ## Features
 
-- **Lexer**: Tokenizes C subset source code using the `logos` crate.
-- **Parser**: Parses tokens into an Abstract Syntax Tree (AST) using the `nom` parser combinator library.
-- **Semantic Analysis**: Performs type checking, symbol resolution, and validation.
-- **Code Generation**: Translates AST to LLVM Intermediate Representation (IR) using the `inkwell` crate.
-- **Virtual Machine**: Executes compiled bytecode with a stack-based architecture.
-- **CLI**: Command-line interface for compiling source files to executables.
+- **Lexing & Parsing**: Tokenizes and parses C subset into AST using `logos` and `nom`.
+- **Semantic Analysis**: Type checking and symbol resolution.
+- **Code Generation**: Emits LLVM IR via `inkwell`.
+- **VM & CLI**: Executes bytecode or compiles to executables.
 
 ## Supported C Subset
 
