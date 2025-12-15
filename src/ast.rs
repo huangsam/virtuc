@@ -19,3 +19,166 @@
 //! error reporting and debugging.
 
 // AST node definitions
+
+/// Represents the primitive types in the C subset.
+#[derive(Debug, PartialEq, Clone)]
+pub enum Type {
+    /// 64-bit integer type
+    Int,
+    /// 64-bit floating-point type
+    Float,
+}
+
+/// Represents binary operators.
+#[derive(Debug, PartialEq, Clone)]
+pub enum BinOp {
+    /// Addition
+    Plus,
+    /// Subtraction
+    Minus,
+    /// Multiplication
+    Multiply,
+    /// Division
+    Divide,
+    /// Equality comparison
+    Equal,
+    /// Inequality comparison
+    NotEqual,
+    /// Less than comparison
+    LessThan,
+    /// Greater than comparison
+    GreaterThan,
+    /// Less than or equal comparison
+    LessEqual,
+    /// Greater than or equal comparison
+    GreaterEqual,
+}
+
+/// Represents literal values.
+#[derive(Debug, PartialEq, Clone)]
+pub enum Literal {
+    /// Integer literal
+    Int(i64),
+    /// Float literal
+    Float(f64),
+}
+
+/// Represents expressions in the AST.
+#[derive(Debug, PartialEq, Clone)]
+pub enum Expr {
+    /// Literal value
+    Literal(Literal),
+    /// Variable identifier
+    Identifier(String),
+    /// Binary operation
+    Binary {
+        left: Box<Expr>,
+        op: BinOp,
+        right: Box<Expr>,
+    },
+    /// Function call
+    Call {
+        name: String,
+        args: Vec<Expr>,
+    },
+}
+
+/// Represents statements in the AST.
+#[derive(Debug, PartialEq, Clone)]
+pub enum Stmt {
+    /// Variable declaration
+    Declaration {
+        ty: Type,
+        name: String,
+        init: Option<Expr>,
+    },
+    /// Variable assignment
+    Assignment {
+        name: String,
+        expr: Expr,
+    },
+    /// Return statement
+    Return(Option<Expr>),
+    /// Block of statements
+    Block(Vec<Stmt>),
+    /// If-else statement
+    If {
+        cond: Expr,
+        then: Box<Stmt>,
+        else_: Option<Box<Stmt>>,
+    },
+    /// For loop
+    For {
+        init: Option<Box<Stmt>>,
+        cond: Option<Expr>,
+        update: Option<Expr>,
+        body: Box<Stmt>,
+    },
+    /// Expression statement (for function calls, etc.)
+    Expr(Expr),
+}
+
+/// Represents a function definition.
+#[derive(Debug, PartialEq, Clone)]
+pub struct Function {
+    /// Return type of the function
+    pub return_ty: Type,
+    /// Name of the function
+    pub name: String,
+    /// Parameters: (type, name) pairs
+    pub params: Vec<(Type, String)>,
+    /// Function body
+    pub body: Stmt,
+}
+
+/// Represents the top-level program.
+#[derive(Debug, PartialEq, Clone)]
+pub struct Program {
+    /// List of function definitions
+    pub functions: Vec<Function>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simple_function() {
+        let func = Function {
+            return_ty: Type::Int,
+            name: "add".to_string(),
+            params: vec![(Type::Int, "a".to_string()), (Type::Int, "b".to_string())],
+            body: Stmt::Block(vec![
+                Stmt::Return(Some(Expr::Binary {
+                    left: Box::new(Expr::Identifier("a".to_string())),
+                    op: BinOp::Plus,
+                    right: Box::new(Expr::Identifier("b".to_string())),
+                })),
+            ]),
+        };
+        // Basic construction test
+        assert_eq!(func.name, "add");
+        assert_eq!(func.return_ty, Type::Int);
+    }
+
+    #[test]
+    fn test_if_statement() {
+        let if_stmt = Stmt::If {
+            cond: Expr::Binary {
+                left: Box::new(Expr::Identifier("x".to_string())),
+                op: BinOp::GreaterThan,
+                right: Box::new(Expr::Literal(Literal::Int(0))),
+            },
+            then: Box::new(Stmt::Return(Some(Expr::Identifier("x".to_string())))),
+            else_: Some(Box::new(Stmt::Return(Some(Expr::Literal(Literal::Int(0)))))),
+        };
+        // Test structure
+        if let Stmt::If { cond, then, else_ } = if_stmt {
+            assert!(matches!(cond, Expr::Binary { .. }));
+            assert!(matches!(*then, Stmt::Return(Some(Expr::Identifier(_)))));
+            assert!(else_.is_some());
+        } else {
+            panic!("Expected If statement");
+        }
+    }
+}
