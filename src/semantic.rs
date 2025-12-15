@@ -30,6 +30,12 @@ pub struct SemanticAnalyzer {
     errors: Vec<SemanticError>,
 }
 
+impl Default for SemanticAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SemanticAnalyzer {
     /// Creates a new semantic analyzer.
     pub fn new() -> Self {
