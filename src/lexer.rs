@@ -130,6 +130,18 @@ pub enum Token {
     RBrace,
 }
 
+/// Error type for the lexer.
+#[derive(Debug, PartialEq, Clone)]
+pub struct LexerError;
+
+impl std::fmt::Display for LexerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Invalid token encountered")
+    }
+}
+
+impl std::error::Error for LexerError {}
+
 /// Lexes the input source code into a vector of tokens.
 ///
 /// # Arguments
@@ -139,14 +151,14 @@ pub enum Token {
 /// # Returns
 ///
 /// A `Result` containing a vector of tokens or a lexing error.
-pub fn lex(input: &str) -> Result<Vec<Token>, ()> {
-    let mut lexer = Token::lexer(input);
+pub fn lex(input: &str) -> Result<Vec<Token>, LexerError> {
+    let lexer = Token::lexer(input);
     let mut tokens = Vec::new();
 
-    while let Some(token) = lexer.next() {
+    for token in lexer {
         match token {
             Ok(t) => tokens.push(t),
-            Err(()) => return Err(()),
+            Err(_) => return Err(LexerError),
         }
     }
 
