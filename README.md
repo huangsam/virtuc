@@ -23,7 +23,7 @@ VirtuC supports lexical analysis, parsing, semantic analysis, code generation to
 - Functions with parameters and return values
 - Function calls
 
-## Building
+## Installation
 
 Ensure you have Rust and LLVM installed. Then:
 
@@ -31,16 +31,14 @@ Ensure you have Rust and LLVM installed. Then:
 cargo install --path .
 ```
 
-## Usage
+## Getting Started
 
 Compile a C subset source file to an executable:
 
 ```bash
+# Compile the source file
 virtuc compile hello.c
-```
 
-Run the executable:
-
-```bash
-./output
+# Run the generated executable
+./hello.out
 ```
