@@ -14,11 +14,16 @@
 use crate::ast::{BinOp, Expr, Function, Literal, Program, Stmt};
 use std::collections::HashMap;
 
-/// Represents a runtime value.
+/// Represents a runtime value in the virtual machine.
+///
+/// The VM supports three types of values: 64-bit integers, 64-bit floats, and void.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Value {
+    /// A 64-bit signed integer value.
     Int(i64),
+    /// A 64-bit floating-point value.
     Float(f64),
+    /// A void value, used for functions that do not return a value.
     Void,
 }
 
@@ -60,6 +65,10 @@ pub enum Opcode {
 }
 
 /// The Virtual Machine.
+///
+/// This struct implements a stack-based virtual machine that executes bytecode
+/// compiled from the AST. It manages instruction execution, operand stack,
+/// call stack for function calls, and local variables.
 pub struct VM {
     /// Instruction memory.
     code: Vec<Opcode>,
@@ -82,7 +91,9 @@ struct Frame {
 }
 
 impl VM {
-    /// Creates a new VM with the given program.
+    /// Creates a new virtual machine instance pre-loaded with the compiled bytecode for the given program.
+    ///
+    /// The VM is initialized with an empty stack, no active frames, and the instruction pointer set to the 'main' function.
     pub fn new(program: &Program) -> Self {
         let (code, functions) = Compiler::compile(program);
         Self {
@@ -94,8 +105,10 @@ impl VM {
         }
     }
 
-    /// Executes the program.
-    /// Returns the exit code (return value of main).
+    /// Executes the loaded program starting from the 'main' function.
+    ///
+    /// Returns the value returned by 'main', or an error string if execution fails
+    /// (e.g., undefined function, stack underflow, etc.).
     pub fn run(&mut self) -> Result<Value, String> {
         // Start at main
         if let Some(&start_addr) = self.functions.get("main") {
