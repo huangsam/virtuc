@@ -191,11 +191,7 @@ fn parse_comparison(input: &[Token]) -> IResult<&[Token], Expr> {
 fn parse_assignment_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
         map(
-            tuple((
-                parse_identifier,
-                token(Token::Assign),
-                parse_expr,
-            )),
+            tuple((parse_identifier, token(Token::Assign), parse_expr)),
             |(name, _, value)| Expr::Assignment {
                 name,
                 value: Box::new(value),
