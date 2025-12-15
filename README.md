@@ -3,7 +3,9 @@
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/huangsam/virtuc/ci.yml)](https://github.com/huangsam/virtuc/actions)
 [![License](https://img.shields.io/github/license/huangsam/virtuc)](https://github.com/huangsam/virtuc/blob/main/LICENSE)
 
-A compiler for a subset of the C programming language, implemented in Rust. VirtuC supports lexical analysis, parsing, semantic analysis, code generation to LLVM IR, and execution via a custom virtual machine.
+A compiler for a subset of the C programming language, implemented in Rust.
+
+VirtuC supports lexical analysis, parsing, semantic analysis, code generation to LLVM IR, and execution via a custom virtual machine. It compiles C-like code into efficient LLVM intermediate representation for optimization and native execution, while also providing a bytecode interpreter for direct runtime evaluation.
 
 ## Features
 
@@ -26,7 +28,7 @@ A compiler for a subset of the C programming language, implemented in Rust. Virt
 Ensure you have Rust and LLVM installed. Then:
 
 ```bash
-cargo build --release
+cargo install --path .
 ```
 
 ## Usage
@@ -34,7 +36,7 @@ cargo build --release
 Compile a C subset source file to an executable:
 
 ```bash
-cargo run -- compile source.c -o output
+virtuc compile hello.c
 ```
 
 Run the executable:

@@ -16,7 +16,7 @@
 //! - Optional output file specification
 //! - Future: Support for bytecode generation and VM execution
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::Path;
 
@@ -26,37 +26,49 @@ use virtuc::compile;
 #[command(name = "virtuc")]
 #[command(about = "A Rust-based subset C compiler")]
 struct Args {
-    /// Input C source file
-    input: String,
+    #[command(subcommand)]
+    command: Commands,
+}
 
-    /// Output executable file
-    #[arg(short, long)]
-    output: Option<String>,
+#[derive(Subcommand)]
+enum Commands {
+    /// Compile C source to executable
+    Compile {
+        /// Input C source file
+        input: String,
+
+        /// Output executable file
+        #[arg(short, long)]
+        output: Option<String>,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // Read input file
-    let source = fs::read_to_string(&args.input)?;
+    match args.command {
+        Commands::Compile { input, output } => {
+            // Read input file
+            let source = fs::read_to_string(&input)?;
 
-    // Determine output file
-    // Note: Defaulting to ".out" extension is tailored towards macOS and Linux systems.
-    // Windows users should explicitly specify an output file with ".exe" extension.
-    let output_str = args
-        .output
-        .unwrap_or_else(|| args.input.trim_end_matches(".c").to_string() + ".out");
-    let output_path = Path::new(&output_str);
+            // Determine output file
+            // Note: Defaulting to ".out" extension is tailored towards macOS and Linux systems.
+            // Windows users should explicitly specify an output file with ".exe" extension.
+            let output_str =
+                output.unwrap_or_else(|| input.trim_end_matches(".c").to_string() + ".out");
+            let output_path = Path::new(&output_str);
 
-    // Compile
-    match compile(&source, output_path) {
-        Ok(_) => {
-            println!("Compiled {} to {}", args.input, output_str);
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
+            // Compile
+            match compile(&source, output_path) {
+                Ok(_) => {
+                    println!("Compiled {} to {}", input, output_str);
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            }
         }
     }
 }
