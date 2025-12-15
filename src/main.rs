@@ -17,6 +17,10 @@
 //! - Future: Support for bytecode generation and VM execution
 
 use clap::Parser;
+use std::fs;
+use std::path::Path;
+
+use virtuc::compile;
 
 #[derive(Parser)]
 #[command(name = "virtuc")]
@@ -30,8 +34,27 @@ struct Args {
     output: Option<String>,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    // TODO: Implement compilation logic
-    println!("Compiling {} to {:?}", args.input, args.output);
+
+    // Read input file
+    let source = fs::read_to_string(&args.input)?;
+
+    // Determine output file
+    let output_str = args.output.unwrap_or_else(|| {
+        args.input.trim_end_matches(".c").to_string() + ".out"
+    });
+    let output_path = Path::new(&output_str);
+
+    // Compile
+    match compile(&source, output_path) {
+        Ok(_) => {
+            println!("Compiled {} to {}", args.input, output_str);
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    }
 }

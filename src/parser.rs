@@ -94,9 +94,9 @@ fn parse_binop(input: &[Token]) -> IResult<&[Token], BinOp> {
 fn parse_primary_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
         map(parse_literal, Expr::Literal),
+        parse_call,
         map(parse_identifier, Expr::Identifier),
         delimited(token(Token::LParen), parse_expr, token(Token::RParen)),
-        parse_call,
     ))(input)
 }
 
@@ -346,9 +346,9 @@ mod tests {
 
     #[test]
     fn test_parse_function() {
-        let tokens = lex("int add(int a, int b) { return a + b; }").unwrap();
+        let tokens = lex("int add(int a, int b) { return a + b; } int main() { return 0; }").unwrap();
         let ast = parse(&tokens).unwrap();
-        assert_eq!(ast.functions.len(), 1);
+        assert_eq!(ast.functions.len(), 2);
         let func = &ast.functions[0];
         assert_eq!(func.name, "add");
         assert_eq!(func.return_ty, Type::Int);
@@ -369,5 +369,9 @@ mod tests {
         } else {
             panic!("Expected block");
         }
+        let func2 = &ast.functions[1];
+        assert_eq!(func2.name, "main");
+        assert_eq!(func2.return_ty, Type::Int);
+        assert_eq!(func2.params, vec![]);
     }
 }
