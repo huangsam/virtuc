@@ -16,14 +16,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install System Dependencies
+      - name: Install system dependencies
         run: |
           apt-get update
           apt-get install -y llvm-19 clang-19 libpolly-19-dev libc++-19-dev libc++abi-19-dev
           # Create symlink for clang so the tests can find it
           ln -sf /usr/bin/clang-19 /usr/bin/clang
 
-      - name: Set Environment Variables
+      - name: Set environment variables
         run: |
           echo "LLVM_SYS_190_PREFIX=/usr/lib/llvm-19" >> $GITHUB_ENV
           echo "LLVM_CONFIG_PATH=/usr/bin/llvm-config-19" >> $GITHUB_ENV

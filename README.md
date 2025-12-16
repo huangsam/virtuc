@@ -17,7 +17,7 @@ VirtuC supports the E2E compilation from C source code to [LLVM IR] for native e
 - **CLI**: Compiles to native executables.
 - **C Interop**: Supports `extern` declarations and `#include <...>` headers.
 
-## Supported C Subset
+## Supported C subset
 
 - Primitive types: `int` (64-bit), `float` (64-bit)
 - Variables and assignments
@@ -26,7 +26,7 @@ VirtuC supports the E2E compilation from C source code to [LLVM IR] for native e
 - Functions with parameters and return values
 - Function calls
 
-## Getting Started
+## Getting started
 
 Ensure you have Rust and LLVM installed. Then:
 
