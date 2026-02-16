@@ -10,7 +10,7 @@ jobs:
   rust-build:
     name: Rust
     runs-on: ubuntu-latest
-    container: rust:1.92-trixie
+    container: rust:1.93-trixie
 
     steps:
       - name: Checkout code
