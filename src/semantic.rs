@@ -26,6 +26,8 @@ pub struct SemanticAnalyzer {
     functions: HashMap<String, (Type, Vec<Type>, bool)>,
     /// Stack of scopes for variables: each scope is name -> type
     scopes: Vec<HashMap<String, Type>>,
+    /// Current function's expected return type (during analysis)
+    current_return_type: Option<Type>,
     /// Collected errors
     errors: Vec<SemanticError>,
 }
@@ -42,6 +44,7 @@ impl SemanticAnalyzer {
         Self {
             functions: HashMap::new(),
             scopes: vec![HashMap::new()], // Global scope
+            current_return_type: None,
             errors: Vec::new(),
         }
     }
@@ -99,6 +102,10 @@ impl SemanticAnalyzer {
 
     /// Analyzes a single function.
     fn analyze_function(&mut self, function: &Function) {
+        // Set the expected return type for this function
+        let prev_return_type = self.current_return_type;
+        self.current_return_type = Some(function.return_ty);
+
         // Enter function scope
         self.scopes.push(HashMap::new());
         // Add parameters to scope
@@ -107,9 +114,9 @@ impl SemanticAnalyzer {
         }
         // Analyze body
         self.check_stmt(&function.body);
-        // Check return type if body has return
-        // For simplicity, assume functions return correctly
-        // TODO: Check return statements match function return type
+
+        // Restore previous return type
+        self.current_return_type = prev_return_type;
         // Pop function scope
         self.scopes.pop();
     }
@@ -136,9 +143,24 @@ impl SemanticAnalyzer {
             }
             Stmt::Return(expr) => {
                 if let Some(e) = expr {
-                    self.check_expr(e);
+                    let expr_ty = self.check_expr(e);
+                    // Only check return type if the expression type is valid (not None from undefined var)
+                    if let Some(expected_ty) = self.current_return_type
+                        && let Some(actual_ty) = expr_ty
+                        && actual_ty != expected_ty
+                    {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Return type mismatch: expected {:?}, got {:?}",
+                            expected_ty, actual_ty
+                        )));
+                    }
+                } else if let Some(expected_ty) = self.current_return_type {
+                    // Function expects a return value but got bare 'return'
+                    self.errors.push(SemanticError::TypeMismatch(format!(
+                        "Function expects return value of type {:?}",
+                        expected_ty
+                    )));
                 }
-                // TODO: Check return type matches function
             }
             Stmt::Block(stmts) => {
                 self.scopes.push(HashMap::new());
@@ -351,5 +373,44 @@ mod tests {
         let errors = analyze(&ast);
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0], SemanticError::DuplicateVariable(_)));
+    }
+
+    #[test]
+    fn test_return_type_mismatch_float_to_int() {
+        let input = "int foo() { return 3.14; }";
+        let tokens = lex(input).unwrap();
+        let ast = parse(&tokens).unwrap();
+        let errors = analyze(&ast);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::TypeMismatch(_)));
+    }
+
+    #[test]
+    fn test_return_type_mismatch_int_to_float() {
+        let input = "float foo() { return 42; }";
+        let tokens = lex(input).unwrap();
+        let ast = parse(&tokens).unwrap();
+        let errors = analyze(&ast);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::TypeMismatch(_)));
+    }
+
+    #[test]
+    fn test_missing_return_value() {
+        let input = "int foo() { int x = 5; return; }";
+        let tokens = lex(input).unwrap();
+        let ast = parse(&tokens).unwrap();
+        let errors = analyze(&ast);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::TypeMismatch(_)));
+    }
+
+    #[test]
+    fn test_valid_float_function() {
+        let input = "float add(float a, float b) { return a + b; }";
+        let tokens = lex(input).unwrap();
+        let ast = parse(&tokens).unwrap();
+        let errors = analyze(&ast);
+        assert!(errors.is_empty());
     }
 }
