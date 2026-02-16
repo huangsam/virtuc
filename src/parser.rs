@@ -125,9 +125,12 @@ fn parse_call(input: &[Token]) -> IResult<&[Token], Expr> {
 }
 
 /// Parse multiplicative expression: primary (*|/ primary)*
+/// Implements left-associative parsing for * and / operators.
+/// Higher precedence than addition, so parses before additive.
 fn parse_multiplicative(input: &[Token]) -> IResult<&[Token], Expr> {
     let (input, mut expr) = parse_primary_expr(input)?;
     let mut input = input;
+    // Loop to handle left-associative chaining: a * b / c -> ((a * b) / c)
     loop {
         let result = opt(tuple((
             alt((token(Token::Multiply), token(Token::Divide))),
@@ -153,9 +156,12 @@ fn parse_multiplicative(input: &[Token]) -> IResult<&[Token], Expr> {
 }
 
 /// Parse additive expression: multiplicative (+|- multiplicative)*
+/// Implements left-associative parsing for + and - operators.
+/// Lower precedence than multiplication, so these parse after multiplicative.
 fn parse_additive(input: &[Token]) -> IResult<&[Token], Expr> {
     let (input, mut expr) = parse_multiplicative(input)?;
     let mut input = input;
+    // Loop to handle left-associative chaining: a + b - c -> ((a + b) - c)
     loop {
         let result = opt(tuple((
             alt((token(Token::Plus), token(Token::Minus))),
@@ -167,6 +173,7 @@ fn parse_additive(input: &[Token]) -> IResult<&[Token], Expr> {
                 Token::Minus => BinOp::Minus,
                 _ => unreachable!(),
             };
+            // Left-associate: wrap left side with new operator
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op,
@@ -181,9 +188,12 @@ fn parse_additive(input: &[Token]) -> IResult<&[Token], Expr> {
 }
 
 /// Parse comparison expression: additive (==|!=|<|>|<=|>= additive)*
+/// Handles comparison operators with lowest precedence.
+/// Unlike +/-, comparisons are non-associative (a < b < c is not allowed in C).
 fn parse_comparison(input: &[Token]) -> IResult<&[Token], Expr> {
     let (input, mut expr) = parse_additive(input)?;
     let mut input = input;
+    // Attempt to parse one comparison operator and right operand
     let result = opt(tuple((parse_binop, parse_additive)))(input)?;
     if let Some((op, right)) = result.1 {
         expr = Expr::Binary {
@@ -270,6 +280,10 @@ fn parse_if(input: &[Token]) -> IResult<&[Token], Stmt> {
 }
 
 /// Parse a for loop: for (init? ; cond? ; update?) stmt
+/// All three components (init, cond, update) are optional according to C syntax.
+/// - init: Can be a declaration (int i = 0) or expression (i = 0)
+/// - cond: Condition checked before each iteration
+/// - update: Expression evaluated at end of each iteration
 fn parse_for(input: &[Token]) -> IResult<&[Token], Stmt> {
     map(
         tuple((

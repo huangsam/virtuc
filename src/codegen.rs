@@ -282,7 +282,13 @@ impl<'ctx> CodeGenerator<'ctx> {
                 update,
                 body,
             } => {
-                // Generate initialization statement
+                // === For Loop Code Generation ===
+                // Generates LLVM basic blocks in the following structure:
+                //   init_code → cond_block → [cond_true?] → body_block → update_block → cond_block (loop back)
+                //                                ↓ [cond_false or no condition] ↓
+                //                                      → after_loop_block
+
+                // Step 1: Generate initialization statement (executes once before loop)
                 if let Some(init_stmt) = init {
                     self.generate_stmt(init_stmt)?;
                 }
@@ -294,19 +300,21 @@ impl<'ctx> CodeGenerator<'ctx> {
                     .get_parent()
                     .unwrap();
 
-                // Create basic blocks for loop structure
+                // Step 2: Create four basic blocks for the loop structure
                 let cond_block = self.context.append_basic_block(current_fn, "loop.cond");
                 let body_block = self.context.append_basic_block(current_fn, "loop.body");
                 let update_block = self.context.append_basic_block(current_fn, "loop.update");
                 let after_loop = self.context.append_basic_block(current_fn, "loop.end");
 
-                // Jump to condition check
+                // Step 3: Branch from initialization to condition check
                 self.builder.build_unconditional_branch(cond_block).unwrap();
 
-                // Condition block
+                // Step 4: Generate condition block
+                // This block is entered at the start of each iteration to check if loop should continue
                 self.builder.position_at_end(cond_block);
                 if let Some(cond_expr) = cond {
                     let cond_value = self.generate_expr(cond_expr)?;
+                    // Convert condition to boolean (non-zero = true)
                     let cond_bool = if cond_value.get_type().is_int_type() {
                         self.builder
                             .build_int_compare(
@@ -319,20 +327,20 @@ impl<'ctx> CodeGenerator<'ctx> {
                     } else {
                         return Err(CodegenError("Loop condition must be integer".to_string()));
                     };
-                    // Branch to body if condition is true, otherwise exit loop
+                    // Conditional branch: if true go to body, if false exit loop
                     self.builder
                         .build_conditional_branch(cond_bool, body_block, after_loop)
                         .unwrap();
                 } else {
-                    // No condition means infinite loop (or loop until break)
-                    // For now, just jump to body
+                    // No condition means infinite loop (for(;;)) - always jump to body
                     self.builder.build_unconditional_branch(body_block).unwrap();
                 }
 
-                // Body block
+                // Step 5: Generate body block
+                // Executes loop statements
                 self.builder.position_at_end(body_block);
                 self.generate_stmt(body)?;
-                // After body, jump to update (if exists) or back to condition
+                // After body, if no early exit (return/break), continue to update or condition
                 if self
                     .builder
                     .get_insert_block()
@@ -341,23 +349,26 @@ impl<'ctx> CodeGenerator<'ctx> {
                     .is_none()
                 {
                     if update.is_some() {
+                        // If update exists, go to update block
                         self.builder
                             .build_unconditional_branch(update_block)
                             .unwrap();
                     } else {
+                        // Otherwise, loop back to condition
                         self.builder.build_unconditional_branch(cond_block).unwrap();
                     }
                 }
 
-                // Update block (if exists)
+                // Step 6: Generate update block (if exists)
+                // Executes update expression at end of each iteration
                 if let Some(update_expr) = update {
                     self.builder.position_at_end(update_block);
                     self.generate_expr(update_expr)?;
-                    // After update, jump back to condition
+                    // After update, jump back to condition to check if loop continues
                     self.builder.build_unconditional_branch(cond_block).unwrap();
                 }
 
-                // Continue with code after loop
+                // Step 7: Continue code generation after the loop
                 self.builder.position_at_end(after_loop);
             }
             Stmt::Expr(expr) => {

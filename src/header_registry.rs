@@ -1,11 +1,25 @@
-//! Small header -> externs registry.
+//! # Header Registry
 //!
-//! Provides a minimal mapping of system headers to extern function
-//! declarations (used to map `#include <stdio.h>` -> `printf`, etc.).
+//! Provides a mapping of C system headers to their corresponding extern function
+//! declarations. When a source file includes a header (e.g., `#include <stdio.h>`),
+//! this registry automatically injects the appropriate function declarations.
+//!
+//! This allows code to use standard library functions without explicit extern declarations.
+//!
+//! ## Supported Headers
+//!
+//! Currently supports:
+//! - `stdio.h` - Standard I/O functions (printf, etc.)
 
 use crate::ast::{ExternFunction, Type};
 
-/// Returns the list of extern functions that should be injected for `header`.
+/// Returns the list of extern functions that should be automatically available for a header.
+///
+/// # Arguments
+/// * `header` - The header name (e.g., "stdio.h")
+///
+/// # Returns
+/// A vector of extern function declarations provided by this header.
 pub fn externs_for_header(header: &str) -> Vec<ExternFunction> {
     match header {
         "stdio.h" => vec![ExternFunction {
