@@ -270,3 +270,52 @@ fn test_printf_many_args() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("1 2 3 4 5 6 7 8 9 10"));
 }
+
+#[test]
+fn test_for_loop_sum() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_for_loop");
+
+    // Test for loop that sums numbers 1 to 10
+    let source = r#"
+        int main() {
+            int sum = 0;
+            for (int i = 1; i <= 10; i = i + 1) {
+                sum = sum + i;
+            }
+            return sum;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let status = Command::new(&output_path)
+        .status()
+        .expect("failed to run generated executable");
+
+    // Sum of 1 to 10 is 55
+    assert_eq!(status.code(), Some(55));
+}
+
+#[test]
+fn test_for_loop_with_printf() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_for_printf");
+
+    let source = r#"
+        #include <stdio.h>
+
+        int main() {
+            for (int i = 0; i < 5; i = i + 1) {
+                printf("%d ", i);
+            }
+            return 0;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let output = Command::new(&output_path).output().expect("failed to run");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim(), "0 1 2 3 4");
+}

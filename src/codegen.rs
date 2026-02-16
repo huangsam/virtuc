@@ -278,17 +278,87 @@ impl<'ctx> CodeGenerator<'ctx> {
             }
             Stmt::For {
                 init,
-                cond: _,
-                update: _,
+                cond,
+                update,
                 body,
             } => {
-                // For simplicity, implement basic for loop
-                // This is complex, so for now, just generate the body
+                // Generate initialization statement
                 if let Some(init_stmt) = init {
                     self.generate_stmt(init_stmt)?;
                 }
-                // TODO: Implement full for loop with condition and update
+
+                let current_fn = self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_parent()
+                    .unwrap();
+
+                // Create basic blocks for loop structure
+                let cond_block = self.context.append_basic_block(current_fn, "loop.cond");
+                let body_block = self.context.append_basic_block(current_fn, "loop.body");
+                let update_block = self.context.append_basic_block(current_fn, "loop.update");
+                let after_loop = self.context.append_basic_block(current_fn, "loop.end");
+
+                // Jump to condition check
+                self.builder.build_unconditional_branch(cond_block).unwrap();
+
+                // Condition block
+                self.builder.position_at_end(cond_block);
+                if let Some(cond_expr) = cond {
+                    let cond_value = self.generate_expr(cond_expr)?;
+                    let cond_bool = if cond_value.get_type().is_int_type() {
+                        self.builder
+                            .build_int_compare(
+                                IntPredicate::NE,
+                                cond_value.into_int_value(),
+                                self.context.i64_type().const_zero(),
+                                "loop.cond.bool",
+                            )
+                            .unwrap()
+                    } else {
+                        return Err(CodegenError("Loop condition must be integer".to_string()));
+                    };
+                    // Branch to body if condition is true, otherwise exit loop
+                    self.builder
+                        .build_conditional_branch(cond_bool, body_block, after_loop)
+                        .unwrap();
+                } else {
+                    // No condition means infinite loop (or loop until break)
+                    // For now, just jump to body
+                    self.builder.build_unconditional_branch(body_block).unwrap();
+                }
+
+                // Body block
+                self.builder.position_at_end(body_block);
                 self.generate_stmt(body)?;
+                // After body, jump to update (if exists) or back to condition
+                if self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_terminator()
+                    .is_none()
+                {
+                    if update.is_some() {
+                        self.builder
+                            .build_unconditional_branch(update_block)
+                            .unwrap();
+                    } else {
+                        self.builder.build_unconditional_branch(cond_block).unwrap();
+                    }
+                }
+
+                // Update block (if exists)
+                if let Some(update_expr) = update {
+                    self.builder.position_at_end(update_block);
+                    self.generate_expr(update_expr)?;
+                    // After update, jump back to condition
+                    self.builder.build_unconditional_branch(cond_block).unwrap();
+                }
+
+                // Continue with code after loop
+                self.builder.position_at_end(after_loop);
             }
             Stmt::Expr(expr) => {
                 self.generate_expr(expr)?;
