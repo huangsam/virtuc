@@ -120,3 +120,135 @@ fn test_short_circuit_logical_operators() {
     let res = run_source(source);
     assert_eq!(res.exit_code, Some(42));
 }
+
+#[test]
+fn test_omitted_for_loop_clauses() {
+    let source = r#"
+        int main() {
+            int sum = 0;
+
+            // 1. Omitted init
+            int i = 0;
+            for (; i < 3; i++) {
+                sum += 1;
+            }
+
+            // 2. Omitted update
+            int j = 0;
+            for (; j < 3; ) {
+                sum += 1;
+                j++;
+            }
+
+            // 3. Omitted cond
+            for (int k = 0; ; k++) {
+                sum += 1;
+                if (k == 2) {
+                    break;
+                }
+            }
+
+            // 4. All clauses omitted
+            for (;;) {
+                sum += 33;
+                break;
+            }
+
+            // 3 + 3 + 3 + 33 = 42
+            return sum;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+}
+
+#[test]
+fn test_nested_loops_break_and_continue() {
+    let source = r#"
+        int main() {
+            int outer_count = 0;
+            int inner_sum = 0;
+
+            for (int i = 0; i < 4; i++) {
+                outer_count++;
+                for (int j = 0; j < 10; j++) {
+                    if (j == 3) {
+                        break; // break inner loop only
+                    }
+                    if (j % 2 == 1) {
+                        continue; // continue inner loop
+                    }
+                    inner_sum += 1;
+                }
+            }
+
+            // Each outer iteration runs j=0 (sum+1), j=1 (continue), j=2 (sum+1), j=3 (break)
+            // inner_sum = 2 per outer iteration * 4 = 8
+            // outer_count = 4
+            // 8 * 5 + 4 - 2 = 42
+            return inner_sum * 5 + outer_count - 2;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+}
+
+#[test]
+fn test_dereference_compound_and_prefix_inc_dec() {
+    let source = r#"
+        int main() {
+            int val = 10;
+            int* p = &val;
+
+            // Pointer dereference compound assignment
+            *p += 5;  // 15
+            *p -= 3;  // 12
+            *p *= 4;  // 48
+            *p /= 2;  // 24
+            *p %= 10; // 4
+
+            // Prefix dereference inc/dec
+            ++*p;     // 5
+            --*p;     // 4
+
+            // Array prefix inc/dec and postfix dec
+            int arr[3];
+            arr[0] = 10;
+            arr[1] = 20;
+            arr[2] = 30;
+
+            ++arr[0]; // 11
+            --arr[1]; // 19
+            arr[2]--; // 29
+
+            // 4 + 11 + 19 + 29 = 63; 63 - 21 = 42
+            return (*p + arr[0] + arr[1] + arr[2]) - 21;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+}
+
+#[test]
+fn test_loop_variable_reuse() {
+    let source = r#"
+        int main() {
+            int sum = 0;
+            for (int i = 0; i < 5; i++) {
+                sum += i; // 0 + 1 + 2 + 3 + 4 = 10
+            }
+            // Re-declare and use i in a subsequent loop
+            for (int i = 0; i < 5; i++) {
+                sum += i; // 10 + 10 = 20
+            }
+            return sum + 22; // 42
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+}
+

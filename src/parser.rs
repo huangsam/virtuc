@@ -661,7 +661,10 @@ fn parse_for(input: &[Token]) -> IResult<&[Token], Stmt> {
                         map(parse_expr_stmt, |s| Some(Box::new(s))),
                         map(token(Token::Semicolon), |_| None),
                     )),
-                    opt(terminated(parse_expr, token(Token::Semicolon))),
+                    map(
+                        tuple((opt(parse_expr), token(Token::Semicolon))),
+                        |(cond, _)| cond,
+                    ),
                     opt(parse_expr),
                 )),
                 token(Token::RParen),

@@ -453,12 +453,7 @@ impl<'ctx> CodeGenerator<'ctx> {
 
                 // Step 5: Generate body block
                 self.builder.position_at_end(body_block);
-                let continue_target = if update.is_some() {
-                    update_block
-                } else {
-                    cond_block
-                };
-                self.loop_stack.push((after_loop, continue_target));
+                self.loop_stack.push((after_loop, update_block));
                 self.generate_stmt(body)?;
                 self.loop_stack.pop();
 
@@ -469,21 +464,17 @@ impl<'ctx> CodeGenerator<'ctx> {
                     .get_terminator()
                     .is_none()
                 {
-                    if update.is_some() {
-                        self.builder
-                            .build_unconditional_branch(update_block)
-                            .unwrap();
-                    } else {
-                        self.builder.build_unconditional_branch(cond_block).unwrap();
-                    }
+                    self.builder
+                        .build_unconditional_branch(update_block)
+                        .unwrap();
                 }
 
-                // Step 6: Generate update block (if exists)
+                // Step 6: Generate update block
+                self.builder.position_at_end(update_block);
                 if let Some(update_expr) = update {
-                    self.builder.position_at_end(update_block);
                     self.generate_expr(update_expr)?;
-                    self.builder.build_unconditional_branch(cond_block).unwrap();
                 }
+                self.builder.build_unconditional_branch(cond_block).unwrap();
 
                 // Step 7: Continue after loop
                 self.builder.position_at_end(after_loop);
