@@ -216,3 +216,118 @@ fn test_loop_variable_reuse() {
     let res = run_source(source);
     assert_eq!(res.exit_code, Some(42));
 }
+
+#[test]
+fn test_2d_array_prefix_postfix_and_compound() {
+    let source = r#"
+        int main() {
+            int mat[2][2];
+            mat[0][0] = 10;
+            mat[0][1] = 20;
+            mat[1][0] = 30;
+            mat[1][1] = 40;
+
+            ++mat[0][0]; // 11
+            --mat[0][1]; // 19
+            mat[1][0]--; // 29
+            mat[1][1]++; // 41
+
+            mat[0][0] += 5; // 16
+            mat[0][1] -= 9; // 10
+            mat[1][0] *= 2; // 58
+            mat[1][1] /= 2; // 20
+
+            // 16 + 10 + 58 + 20 = 104; 104 - 62 = 42
+            return (mat[0][0] + mat[0][1] + mat[1][0] + mat[1][1]) - 62;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+}
+
+#[test]
+fn test_float_2d_array() {
+    let source = r#"
+        #include <stdio.h>
+
+        int main() {
+            float mat[2][2];
+            mat[0][0] = 1.5;
+            mat[0][1] = 2.5;
+            mat[1][0] = 3.5;
+            mat[1][1] = 4.5;
+
+            float sum = 0.0;
+            for (int i = 0; i < 2; i++) {
+                for (int j = 0; j < 2; j++) {
+                    sum = sum + mat[i][j];
+                }
+            }
+            // sum = 1.5 + 2.5 + 3.5 + 4.5 = 12.0
+            printf("sum=%.1f\n", sum);
+            if (sum == 12.0) {
+                return 42;
+            }
+            return 1;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+    assert!(res.stdout.contains("sum=12.0"));
+}
+
+#[test]
+fn test_2d_array_whole_decay_to_pointer() {
+    let source = r#"
+        void fill_buffer(int* p, int n) {
+            for (int i = 0; i < n; i++) {
+                p[i] = (i + 1) * 2;
+            }
+        }
+
+        int main() {
+            int mat[2][3];
+            fill_buffer(mat, 6);
+            // mat[0] = [2, 4, 6]
+            // mat[1] = [8, 10, 12]
+            return mat[1][2] + 30; // 12 + 30 = 42
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+}
+
+#[test]
+fn test_nested_dynamic_index_expressions() {
+    let source = r#"
+        int main() {
+            int mat[3][3];
+            mat[0][0] = 1;
+            mat[0][1] = 2;
+            mat[1][2] = 42;
+
+            // Computed indices: mat[mat[0][0]][mat[0][1]] -> mat[1][2] -> 42
+            return mat[mat[0][0]][mat[0][1]];
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+}
+
+#[test]
+fn test_3d_array() {
+    let source = r#"
+        int main() {
+            int cube[2][3][4];
+            cube[1][2][3] = 42;
+            return cube[1][2][3];
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+}

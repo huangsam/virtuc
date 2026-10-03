@@ -182,6 +182,44 @@ fn test_2d_array_type_mismatch_assignment_fails() {
 }
 
 #[test]
+fn test_2d_array_too_few_indices_assignment_fails() {
+    let source = r#"
+        int main() {
+            int arr[2][2];
+            arr[0] = 5;
+            return 0;
+        }
+    "#;
+
+    assert!(compile_source(source).is_err());
+}
+
+#[test]
+fn test_2d_array_non_integer_index_fails() {
+    let source = r#"
+        int main() {
+            int arr[2][2];
+            int x = arr[0][1.5];
+            return x;
+        }
+    "#;
+
+    assert!(compile_source(source).is_err());
+}
+
+#[test]
+fn test_non_array_indexed_twice_fails() {
+    let source = r#"
+        int main() {
+            int x = 10;
+            return x[0][0];
+        }
+    "#;
+
+    assert!(compile_source(source).is_err());
+}
+
+#[test]
 fn test_calling_undefined_function_fails() {
     let source = r#"
         int main() {
