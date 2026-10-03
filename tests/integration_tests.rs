@@ -575,3 +575,53 @@ fn test_short_circuit_logical_operators() {
 
     assert_eq!(status.code(), Some(42));
 }
+
+#[test]
+fn test_stdlib_header() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_stdlib");
+
+    let source = r#"
+        #include <stdlib.h>
+
+        int main() {
+            int negative = -42;
+            int positive = abs(negative);
+            exit(positive);
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let status = Command::new(&output_path)
+        .status()
+        .expect("failed to run generated executable");
+
+    assert_eq!(status.code(), Some(42));
+}
+
+#[test]
+fn test_math_header() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_math");
+
+    let source = r#"
+        #include <stdio.h>
+        #include <math.h>
+
+        int main() {
+            float s = sqrt(16.0);
+            float p = pow(2.0, 3.0);
+            printf("sqrt=%.1f pow=%.1f\n", s, p);
+            return 42;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let output = Command::new(&output_path)
+        .output()
+        .expect("failed to run generated executable");
+
+    assert_eq!(output.status.code(), Some(42));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("sqrt=4.0 pow=8.0"));
+}

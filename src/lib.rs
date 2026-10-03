@@ -68,6 +68,7 @@ pub fn compile(source: &str, output: &Path) -> Result<(), Box<dyn std::error::Er
             "-o",
             output.to_str().unwrap(),
             "-lc",
+            "-lm",
             "-Wno-override-module",
         ])
         .status()?;

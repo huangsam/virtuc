@@ -93,11 +93,12 @@ impl SemanticAnalyzer {
 
         // Handle includes: map known headers to builtin externs
         for header in &program.includes {
-            if header == "stdio.h" {
-                // ensure printf is available: extern int printf(string, ...);
-                if !self.functions.contains_key("printf") {
-                    self.functions
-                        .insert("printf".to_string(), (Type::Int, vec![Type::String], true));
+            for ext in crate::header_registry::externs_for_header(header) {
+                if !self.functions.contains_key(&ext.name) {
+                    self.functions.insert(
+                        ext.name,
+                        (ext.return_ty, ext.param_types, ext.is_variadic),
+                    );
                 }
             }
         }
