@@ -1,3 +1,4 @@
+mod algo_cases;
 mod cli;
 mod common;
 mod edge_cases;
