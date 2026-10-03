@@ -494,3 +494,45 @@ fn test_void_functions() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Void test executed"));
 }
+
+#[test]
+fn test_break_and_continue() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_break_cont");
+
+    let source = r#"
+        int main() {
+            int break_sum = 0;
+            int i = 0;
+            // Test break in while loop
+            while (1) {
+                if (i >= 10) {
+                    break;
+                }
+                break_sum += i;
+                i++;
+            }
+            // break_sum = 0 + 1 + ... + 9 = 45
+
+            // Test continue in for loop: sum only odd numbers between 0 and 10
+            // odd numbers: 1, 3, 5, 7, 9 -> sum = 25
+            int odd_sum = 0;
+            for (int j = 0; j < 10; j++) {
+                if (j % 2 == 0) {
+                    continue;
+                }
+                odd_sum += j;
+            }
+
+            // 45 - 25 = 20; 20 + 22 = 42
+            return (break_sum - odd_sum) + 22;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let status = Command::new(&output_path)
+        .status()
+        .expect("failed to run generated executable");
+
+    assert_eq!(status.code(), Some(42));
+}

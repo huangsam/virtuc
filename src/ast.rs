@@ -133,6 +133,10 @@ pub enum Stmt {
         cond: Expr,
         body: Box<Stmt>,
     },
+    /// Break statement
+    Break,
+    /// Continue statement
+    Continue,
     /// Expression statement (for function calls, etc.)
     Expr(Expr),
 }

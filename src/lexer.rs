@@ -69,6 +69,14 @@ pub enum Token {
     #[token("while")]
     While,
 
+    /// Break keyword
+    #[token("break")]
+    Break,
+
+    /// Continue keyword
+    #[token("continue")]
+    Continue,
+
     /// Return keyword
     #[token("return")]
     Return,

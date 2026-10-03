@@ -435,6 +435,22 @@ fn parse_while(input: &[Token]) -> IResult<&[Token], Stmt> {
     )(input)
 }
 
+/// Parse a break statement: break ;
+fn parse_break(input: &[Token]) -> IResult<&[Token], Stmt> {
+    map(
+        tuple((token(Token::Break), token(Token::Semicolon))),
+        |_| Stmt::Break,
+    )(input)
+}
+
+/// Parse a continue statement: continue ;
+fn parse_continue(input: &[Token]) -> IResult<&[Token], Stmt> {
+    map(
+        tuple((token(Token::Continue), token(Token::Semicolon))),
+        |_| Stmt::Continue,
+    )(input)
+}
+
 /// Parse an expression statement: expr ;
 fn parse_expr_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
     map(terminated(parse_expr, token(Token::Semicolon)), Stmt::Expr)(input)
@@ -448,6 +464,8 @@ fn parse_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
         parse_if,
         parse_for,
         parse_while,
+        parse_break,
+        parse_continue,
         parse_block,
         parse_expr_stmt,
     ))(input)

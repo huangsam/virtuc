@@ -18,6 +18,7 @@
 //! optimizations enabled.
 
 use inkwell::AddressSpace;
+use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
@@ -37,6 +38,8 @@ pub struct CodeGenerator<'ctx> {
     builder: Builder<'ctx>,
     /// Variable environment: name -> (pointer to value, type)
     variables: HashMap<String, (PointerValue<'ctx>, Type)>,
+    /// Stack of loops: (break_target, continue_target)
+    loop_stack: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
 }
 
 impl<'ctx> CodeGenerator<'ctx> {
@@ -57,6 +60,7 @@ impl<'ctx> CodeGenerator<'ctx> {
             module,
             builder,
             variables: HashMap::new(),
+            loop_stack: Vec::new(),
         }
     }
 
@@ -123,6 +127,7 @@ impl<'ctx> CodeGenerator<'ctx> {
 
         // Clear variables for new function
         self.variables.clear();
+        self.loop_stack.clear();
 
         // Allocate parameters
         for (i, (ty, name)) in function.params.iter().enumerate() {
@@ -173,6 +178,12 @@ impl<'ctx> CodeGenerator<'ctx> {
 
     /// Generates a statement.
     fn generate_stmt(&mut self, stmt: &Stmt) -> Result<(), CodegenError> {
+        if let Some(block) = self.builder.get_insert_block() {
+            if block.get_terminator().is_some() {
+                // Block already terminated by return, break, or continue
+                return Ok(());
+            }
+        }
         match stmt {
             Stmt::Declaration { ty, name, init } => {
                 let llvm_ty = self.llvm_type(*ty);
@@ -259,34 +270,6 @@ impl<'ctx> CodeGenerator<'ctx> {
 
                 // Merge block
                 self.builder.position_at_end(merge_block);
-
-                // If the merge block is empty (no instructions), it means both branches returned.
-                // In this case, we should probably remove the merge block to avoid "Basic Block ... does not have terminator!" error
-                // if we don't add anything else to it.
-                // However, checking if it's empty is tricky without the right methods.
-                // Instead, we can just add a dummy return or unreachable if we know we are at the end of the function?
-                // No, we might be in the middle of a function.
-
-                // A safer bet for now: if the merge block has no uses (predecessors), remove it.
-                // But we can't easily check predecessors.
-
-                // Let's try to add a terminator to the merge block if it doesn't have one?
-                // But we don't know what to return or where to jump.
-
-                // The issue is likely that `test_compile_and_run_control_flow` has a main function where both if/else return.
-                // So the code after the if/else (which is the merge block) is unreachable.
-                // But the function body ends there.
-                // So the merge block is the last block, and it's empty and unterminated.
-
-                // If we are at the end of the function, we should have a return.
-                // But `generate_function` only calls `generate_stmt` for the body.
-                // If the body is a block, it generates stmts.
-                // If the last stmt is an If that returns in both branches, we end up at merge_block.
-                // And then `generate_function` finishes.
-                // So `llvm_function.verify` sees an unterminated block.
-
-                // We need to handle the case where control flow falls off the end of the function.
-                // In C, for non-void functions, this is UB, but we should probably generate a default return or unreachable.
             }
             Stmt::For {
                 init,
@@ -294,13 +277,7 @@ impl<'ctx> CodeGenerator<'ctx> {
                 update,
                 body,
             } => {
-                // === For Loop Code Generation ===
-                // Generates LLVM basic blocks in the following structure:
-                //   init_code → cond_block → [cond_true?] → body_block → update_block → cond_block (loop back)
-                //                                ↓ [cond_false or no condition] ↓
-                //                                      → after_loop_block
-
-                // Step 1: Generate initialization statement (executes once before loop)
+                // Step 1: Generate initialization statement
                 if let Some(init_stmt) = init {
                     self.generate_stmt(init_stmt)?;
                 }
@@ -312,21 +289,19 @@ impl<'ctx> CodeGenerator<'ctx> {
                     .get_parent()
                     .unwrap();
 
-                // Step 2: Create four basic blocks for the loop structure
+                // Step 2: Create basic blocks
                 let cond_block = self.context.append_basic_block(current_fn, "loop.cond");
                 let body_block = self.context.append_basic_block(current_fn, "loop.body");
                 let update_block = self.context.append_basic_block(current_fn, "loop.update");
                 let after_loop = self.context.append_basic_block(current_fn, "loop.end");
 
-                // Step 3: Branch from initialization to condition check
+                // Step 3: Branch to condition check
                 self.builder.build_unconditional_branch(cond_block).unwrap();
 
                 // Step 4: Generate condition block
-                // This block is entered at the start of each iteration to check if loop should continue
                 self.builder.position_at_end(cond_block);
                 if let Some(cond_expr) = cond {
                     let cond_value = self.generate_expr(cond_expr)?;
-                    // Convert condition to boolean (non-zero = true)
                     let cond_bool = if cond_value.get_type().is_int_type() {
                         self.builder
                             .build_int_compare(
@@ -339,20 +314,24 @@ impl<'ctx> CodeGenerator<'ctx> {
                     } else {
                         return Err(CodegenError("Loop condition must be integer".to_string()));
                     };
-                    // Conditional branch: if true go to body, if false exit loop
                     self.builder
                         .build_conditional_branch(cond_bool, body_block, after_loop)
                         .unwrap();
                 } else {
-                    // No condition means infinite loop (for(;;)) - always jump to body
                     self.builder.build_unconditional_branch(body_block).unwrap();
                 }
 
                 // Step 5: Generate body block
-                // Executes loop statements
                 self.builder.position_at_end(body_block);
+                let continue_target = if update.is_some() {
+                    update_block
+                } else {
+                    cond_block
+                };
+                self.loop_stack.push((after_loop, continue_target));
                 self.generate_stmt(body)?;
-                // After body, if no early exit (return/break), continue to update or condition
+                self.loop_stack.pop();
+
                 if self
                     .builder
                     .get_insert_block()
@@ -361,26 +340,22 @@ impl<'ctx> CodeGenerator<'ctx> {
                     .is_none()
                 {
                     if update.is_some() {
-                        // If update exists, go to update block
                         self.builder
                             .build_unconditional_branch(update_block)
                             .unwrap();
                     } else {
-                        // Otherwise, loop back to condition
                         self.builder.build_unconditional_branch(cond_block).unwrap();
                     }
                 }
 
                 // Step 6: Generate update block (if exists)
-                // Executes update expression at end of each iteration
                 if let Some(update_expr) = update {
                     self.builder.position_at_end(update_block);
                     self.generate_expr(update_expr)?;
-                    // After update, jump back to condition to check if loop continues
                     self.builder.build_unconditional_branch(cond_block).unwrap();
                 }
 
-                // Step 7: Continue code generation after the loop
+                // Step 7: Continue after loop
                 self.builder.position_at_end(after_loop);
             }
             Stmt::While { cond, body } => {
@@ -418,7 +393,10 @@ impl<'ctx> CodeGenerator<'ctx> {
 
                 // Body block
                 self.builder.position_at_end(body_block);
+                self.loop_stack.push((after_loop, cond_block));
                 self.generate_stmt(body)?;
+                self.loop_stack.pop();
+
                 if self
                     .builder
                     .get_insert_block()
@@ -431,6 +409,22 @@ impl<'ctx> CodeGenerator<'ctx> {
 
                 // After loop block
                 self.builder.position_at_end(after_loop);
+            }
+            Stmt::Break => {
+                if let Some((break_target, _)) = self.loop_stack.last() {
+                    self.builder.build_unconditional_branch(*break_target).unwrap();
+                } else {
+                    return Err(CodegenError("Break outside of loop".to_string()));
+                }
+            }
+            Stmt::Continue => {
+                if let Some((_, continue_target)) = self.loop_stack.last() {
+                    self.builder
+                        .build_unconditional_branch(*continue_target)
+                        .unwrap();
+                } else {
+                    return Err(CodegenError("Continue outside of loop".to_string()));
+                }
             }
             Stmt::Expr(expr) => {
                 self.generate_expr(expr)?;

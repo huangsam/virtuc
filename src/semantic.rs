@@ -28,6 +28,8 @@ pub struct SemanticAnalyzer {
     scopes: Vec<HashMap<String, Type>>,
     /// Current function's expected return type (during analysis)
     current_return_type: Option<Type>,
+    /// Loop nesting depth
+    loop_depth: usize,
     /// Collected errors
     errors: Vec<SemanticError>,
 }
@@ -45,6 +47,7 @@ impl SemanticAnalyzer {
             functions: HashMap::new(),
             scopes: vec![HashMap::new()], // Global scope
             current_return_type: None,
+            loop_depth: 0,
             errors: Vec::new(),
         }
     }
@@ -219,7 +222,9 @@ impl SemanticAnalyzer {
                 if let Some(update_expr) = update {
                     self.check_expr(update_expr);
                 }
+                self.loop_depth += 1;
                 self.check_stmt(body);
+                self.loop_depth -= 1;
                 self.scopes.pop();
             }
             Stmt::While { cond, body } => {
@@ -230,8 +235,24 @@ impl SemanticAnalyzer {
                     ));
                 }
                 self.scopes.push(HashMap::new());
+                self.loop_depth += 1;
                 self.check_stmt(body);
+                self.loop_depth -= 1;
                 self.scopes.pop();
+            }
+            Stmt::Break => {
+                if self.loop_depth == 0 {
+                    self.errors.push(SemanticError::TypeMismatch(
+                        "Break statement outside of loop".to_string(),
+                    ));
+                }
+            }
+            Stmt::Continue => {
+                if self.loop_depth == 0 {
+                    self.errors.push(SemanticError::TypeMismatch(
+                        "Continue statement outside of loop".to_string(),
+                    ));
+                }
             }
             Stmt::Expr(expr) => {
                 self.check_expr(expr);
