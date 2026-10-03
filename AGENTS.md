@@ -14,16 +14,6 @@ This document outlines the AI agents, tools, and methodologies employed in the d
   - Documentation generation
   - Test case creation
 
-### Development Tools
-
-- **Rust Compiler (rustc)**: Core compilation and error checking.
-- **Cargo**: Package management, building, and testing.
-- **LLVM**: Backend for code generation via `inkwell` crate.
-- **Logos**: Lexical analysis library.
-- **Nom**: Parser combinator library.
-- **Inkwell**: LLVM IR generation.
-- **Clap**: Command-line interface.
-
 ## Development Process
 
 1. **Planning**: Used AI to brainstorm architecture and design decisions.
@@ -37,12 +27,3 @@ This document outlines the AI agents, tools, and methodologies employed in the d
 - Ensuring comprehensive error handling and type safety.
 - Maintaining clean, idiomatic Rust code.
 - Generating thorough documentation and examples.
-
-## Lessons Learned
-
-- AI excels at boilerplate code and common patterns.
-- Human oversight is crucial for architectural decisions.
-- Iterative refinement with AI feedback improves code quality.
-- Documentation benefits greatly from AI assistance.
-
-This project demonstrates effective collaboration between human developers and AI agents in building a non-trivial compiler system.
