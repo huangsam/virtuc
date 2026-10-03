@@ -319,3 +319,31 @@ fn test_for_loop_with_printf() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(stdout.trim(), "0 1 2 3 4");
 }
+
+#[test]
+fn test_block_comments() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_block_comments");
+
+    let source = r#"
+        /*
+         * Multi-line comment header
+         */
+        #include <stdio.h>
+
+        /* Function comment */
+        int main() {
+            int /* inline */ x = 100;
+            /* Comment inside body
+               spanning multiple lines */
+            return x /* inline 2 */ - 58;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let status = Command::new(&output_path)
+        .status()
+        .expect("failed to run generated executable");
+
+    assert_eq!(status.code(), Some(42));
+}

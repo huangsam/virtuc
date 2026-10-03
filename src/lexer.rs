@@ -19,13 +19,24 @@
 //! the lexer automatically. Handles whitespace, comments, and error recovery.
 
 use crate::error::LexerError;
-use logos::Logos;
+use logos::{FilterResult, Logos};
+
+fn skip_block_comment(lex: &mut logos::Lexer<Token>) -> FilterResult<(), ()> {
+    if let Some(end) = lex.remainder().find("*/") {
+        lex.bump(end + 2);
+        FilterResult::Skip
+    } else {
+        FilterResult::Error(())
+    }
+}
 
 /// Represents the tokens produced by the lexer.
 #[derive(Logos, Debug, PartialEq, Clone)]
 #[logos(skip r"[ \t\n\f]+")] // Skip whitespace
 #[logos(skip r"//[^\n]*")] // Skip single-line comments
 pub enum Token {
+    #[regex(r"/\*", skip_block_comment)]
+    BlockComment,
     /// Integer keyword
     #[token("int")]
     Int,
@@ -391,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_comments_and_whitespace() {
-        let input = "int x = 5; // this is a comment\nfloat y;";
+        let input = "int /* inline comment */ x = 5; // this is a comment\n/* multi\nline\ncomment */float y;";
         let expected = vec![
             Token::Int,
             Token::Identifier("x".to_string()),
