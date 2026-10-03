@@ -49,6 +49,10 @@ pub enum Token {
     #[token("string")]
     StringType,
 
+    /// Void keyword
+    #[token("void")]
+    Void,
+
     /// If keyword
     #[token("if")]
     If,

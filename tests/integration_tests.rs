@@ -460,3 +460,37 @@ fn test_increment_decrement_and_compound_assign() {
 
     assert_eq!(status.code(), Some(42));
 }
+
+#[test]
+fn test_void_functions() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_void");
+
+    let source = r#"
+        #include <stdio.h>
+
+        void print_msg(string msg) {
+            printf("%s\n", msg);
+            return;
+        }
+
+        void no_op() {
+            // implicit return void
+        }
+
+        int main() {
+            print_msg("Void test executed");
+            no_op();
+            return 42;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let output = Command::new(&output_path)
+        .output()
+        .expect("failed to run generated executable");
+
+    assert_eq!(output.status.code(), Some(42));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Void test executed"));
+}

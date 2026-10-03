@@ -110,6 +110,11 @@ impl SemanticAnalyzer {
         self.scopes.push(HashMap::new());
         // Add parameters to scope
         for (ty, name) in &function.params {
+            if *ty == Type::Void {
+                self.errors.push(SemanticError::TypeMismatch(
+                    "Parameter cannot have void type".to_string(),
+                ));
+            }
             self.scopes.last_mut().unwrap().insert(name.clone(), *ty);
         }
         // Analyze body
@@ -125,6 +130,11 @@ impl SemanticAnalyzer {
     fn check_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Declaration { ty, name, init } => {
+                if *ty == Type::Void {
+                    self.errors.push(SemanticError::TypeMismatch(
+                        "Variable cannot have void type".to_string(),
+                    ));
+                }
                 if self.scopes.last().unwrap().contains_key(name) {
                     self.errors
                         .push(SemanticError::DuplicateVariable(name.clone()));
@@ -145,21 +155,28 @@ impl SemanticAnalyzer {
                 if let Some(e) = expr {
                     let expr_ty = self.check_expr(e);
                     // Only check return type if the expression type is valid (not None from undefined var)
-                    if let Some(expected_ty) = self.current_return_type
-                        && let Some(actual_ty) = expr_ty
-                        && actual_ty != expected_ty
-                    {
-                        self.errors.push(SemanticError::TypeMismatch(format!(
-                            "Return type mismatch: expected {:?}, got {:?}",
-                            expected_ty, actual_ty
-                        )));
+                    if let Some(expected_ty) = self.current_return_type {
+                        if expected_ty == Type::Void {
+                            self.errors.push(SemanticError::TypeMismatch(
+                                "Void function cannot return a value".to_string(),
+                            ));
+                        } else if let Some(actual_ty) = expr_ty
+                            && actual_ty != expected_ty
+                        {
+                            self.errors.push(SemanticError::TypeMismatch(format!(
+                                "Return type mismatch: expected {:?}, got {:?}",
+                                expected_ty, actual_ty
+                            )));
+                        }
                     }
                 } else if let Some(expected_ty) = self.current_return_type {
-                    // Function expects a return value but got bare 'return'
-                    self.errors.push(SemanticError::TypeMismatch(format!(
-                        "Function expects return value of type {:?}",
-                        expected_ty
-                    )));
+                    if expected_ty != Type::Void {
+                        // Function expects a return value but got bare 'return'
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Function expects return value of type {:?}",
+                            expected_ty
+                        )));
+                    }
                 }
             }
             Stmt::Block(stmts) => {

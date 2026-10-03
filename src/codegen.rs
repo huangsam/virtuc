@@ -86,9 +86,15 @@ impl<'ctx> CodeGenerator<'ctx> {
             .iter()
             .map(|ty| self.llvm_type(*ty).into())
             .collect();
-        let fn_type = self
-            .llvm_type(extern_func.return_ty)
-            .fn_type(&param_types, extern_func.is_variadic);
+        let fn_type = match extern_func.return_ty {
+            Type::Void => self
+                .context
+                .void_type()
+                .fn_type(&param_types, extern_func.is_variadic),
+            _ => self
+                .llvm_type(extern_func.return_ty)
+                .fn_type(&param_types, extern_func.is_variadic),
+        };
         self.module.add_function(&extern_func.name, fn_type, None);
         Ok(())
     }
@@ -101,9 +107,12 @@ impl<'ctx> CodeGenerator<'ctx> {
             .iter()
             .map(|(ty, _)| self.llvm_type(*ty).into())
             .collect();
-        let fn_type = self
-            .llvm_type(function.return_ty)
-            .fn_type(&param_types, false);
+        let fn_type = match function.return_ty {
+            Type::Void => self.context.void_type().fn_type(&param_types, false),
+            _ => self
+                .llvm_type(function.return_ty)
+                .fn_type(&param_types, false),
+        };
 
         // Create function
         let llvm_function = self.module.add_function(&function.name, fn_type, None);
@@ -147,6 +156,9 @@ impl<'ctx> CodeGenerator<'ctx> {
                             &self.context.ptr_type(AddressSpace::default()).const_null(),
                         ))
                         .unwrap();
+                }
+                Type::Void => {
+                    self.builder.build_return(None).unwrap();
                 }
             }
         }
@@ -830,12 +842,14 @@ impl<'ctx> CodeGenerator<'ctx> {
                     .iter()
                     .map(|arg| self.generate_expr(arg).map(|v| v.into()))
                     .collect::<Result<_, _>>()?;
-                Ok(self
+                let call = self
                     .builder
                     .build_call(function, &arg_values, "call")
-                    .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_basic())
+                    .unwrap();
+                match call.try_as_basic_value().basic() {
+                    Some(val) => Ok(val),
+                    None => Ok(self.context.i64_type().const_zero().into()),
+                }
             }
             Expr::Assignment { name, value } => {
                 let val = self.generate_expr(value)?;
@@ -855,6 +869,7 @@ impl<'ctx> CodeGenerator<'ctx> {
             Type::Int => self.context.i64_type().into(),
             Type::Float => self.context.f64_type().into(),
             Type::String => self.context.ptr_type(AddressSpace::default()).into(),
+            Type::Void => panic!("Void cannot be converted to BasicTypeEnum"),
         }
     }
 }

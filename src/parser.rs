@@ -50,12 +50,13 @@ fn token(expected: Token) -> impl Fn(&[Token]) -> IResult<&[Token], Token> {
     }
 }
 
-/// Parse a type: int | float | string
+/// Parse a type: int | float | string | void
 fn parse_type(input: &[Token]) -> IResult<&[Token], Type> {
     alt((
         map(token(Token::Int), |_| Type::Int),
         map(token(Token::Float), |_| Type::Float),
         map(token(Token::StringType), |_| Type::String),
+        map(token(Token::Void), |_| Type::Void),
     ))(input)
 }
 

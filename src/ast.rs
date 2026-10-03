@@ -27,6 +27,8 @@ pub enum Type {
     Float,
     /// String type (const char*)
     String,
+    /// Void type (for functions without return value)
+    Void,
 }
 
 /// Represents binary operators.
