@@ -92,31 +92,72 @@ pub enum Expr {
     /// Variable identifier
     Identifier(String),
     /// Unary operation
-    Unary { op: UnaryOp, expr: Box<Expr> },
+    Unary {
+        /// The unary operator
+        op: UnaryOp,
+        /// The operand expression
+        expr: Box<Expr>,
+    },
     /// Binary operation
     Binary {
+        /// Left-hand side operand
         left: Box<Expr>,
+        /// Binary operator
         op: BinOp,
+        /// Right-hand side operand
         right: Box<Expr>,
     },
     /// Short-circuiting logical AND (&&)
-    LogicalAnd { left: Box<Expr>, right: Box<Expr> },
+    LogicalAnd {
+        /// Left-hand side operand
+        left: Box<Expr>,
+        /// Right-hand side operand
+        right: Box<Expr>,
+    },
     /// Short-circuiting logical OR (||)
-    LogicalOr { left: Box<Expr>, right: Box<Expr> },
+    LogicalOr {
+        /// Left-hand side operand
+        left: Box<Expr>,
+        /// Right-hand side operand
+        right: Box<Expr>,
+    },
     /// Array indexing access: `identifier[index]` or `identifier[i][j]...`
-    Index { name: String, indices: Vec<Expr> },
+    Index {
+        /// Name of the array variable
+        name: String,
+        /// Index expressions for each dimension
+        indices: Vec<Expr>,
+    },
     /// Array indexing assignment: `identifier[index] = value` or `identifier[i][j]... = value`
     IndexAssignment {
+        /// Name of the array variable
         name: String,
+        /// Index expressions for each dimension
         indices: Vec<Expr>,
+        /// Value to assign
         value: Box<Expr>,
     },
     /// Pointer dereference assignment: `*target = value`
-    DerefAssignment { target: Box<Expr>, value: Box<Expr> },
+    DerefAssignment {
+        /// Target pointer expression being dereferenced
+        target: Box<Expr>,
+        /// Value to assign
+        value: Box<Expr>,
+    },
     /// Function call
-    Call { name: String, args: Vec<Expr> },
+    Call {
+        /// Name of the function being called
+        name: String,
+        /// Arguments passed to the function
+        args: Vec<Expr>,
+    },
     /// Assignment expression
-    Assignment { name: String, value: Box<Expr> },
+    Assignment {
+        /// Name of the variable being assigned to
+        name: String,
+        /// Value expression to assign
+        value: Box<Expr>,
+    },
 }
 
 /// Represents statements in the AST.
@@ -124,14 +165,20 @@ pub enum Expr {
 pub enum Stmt {
     /// Variable declaration
     Declaration {
+        /// Type of the variable
         ty: Type,
+        /// Variable identifier name
         name: String,
+        /// Optional initializer expression
         init: Option<Expr>,
     },
     /// Fixed-size array declaration: `type name[size];` or `type name[d1][d2]...;`
     ArrayDeclaration {
+        /// Base element type of the array
         ty: Type,
+        /// Array identifier name
         name: String,
+        /// Fixed dimension sizes
         dims: Vec<usize>,
     },
     /// Return statement
@@ -140,19 +187,31 @@ pub enum Stmt {
     Block(Vec<Stmt>),
     /// If-else statement
     If {
+        /// Branching condition expression
         cond: Expr,
+        /// Then block statement
         then: Box<Stmt>,
+        /// Optional else block statement
         else_: Option<Box<Stmt>>,
     },
     /// For loop
     For {
+        /// Optional loop initialization statement
         init: Option<Box<Stmt>>,
+        /// Optional loop condition expression
         cond: Option<Expr>,
+        /// Optional loop update expression
         update: Option<Expr>,
+        /// Loop body statement
         body: Box<Stmt>,
     },
     /// While loop
-    While { cond: Expr, body: Box<Stmt> },
+    While {
+        /// Loop condition expression
+        cond: Expr,
+        /// Loop body statement
+        body: Box<Stmt>,
+    },
     /// Break statement
     Break,
     /// Continue statement

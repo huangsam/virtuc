@@ -7,10 +7,10 @@
 //! ## Grammar
 //!
 //! The parser handles the C subset grammar including:
-//! - Expressions: arithmetic, comparison, assignment
-//! - Statements: variable declarations, assignments, control flow
-//! - Functions: declarations and definitions
-//! - Control structures: if-else, for loops
+//! - Expressions: arithmetic, comparison, logical, assignment, calls, array indexing, and pointer dereferencing
+//! - Statements: variable/array declarations, assignments, returns, blocks, break/continue
+//! - Functions: declarations (`extern`) and definitions
+//! - Control structures: `if`-`else`, `for` loops, `while` loops
 //!
 //! ## Parser Combinators
 //!

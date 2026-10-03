@@ -35,6 +35,7 @@ fn skip_block_comment(lex: &mut logos::Lexer<Token>) -> FilterResult<(), ()> {
 #[logos(skip r"[ \t\n\f]+")] // Skip whitespace
 #[logos(skip r"//[^\n]*")] // Skip single-line comments
 pub enum Token {
+    /// C-style block comment (`/* ... */`) skipped by custom callback
     #[regex(r"/\*", skip_block_comment)]
     BlockComment,
     /// Integer keyword
@@ -84,6 +85,8 @@ pub enum Token {
     /// Extern keyword
     #[token("extern")]
     Extern,
+
+    /// Identifier token
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
     Identifier(String),
 

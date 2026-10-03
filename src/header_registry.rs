@@ -9,7 +9,9 @@
 //! ## Supported Headers
 //!
 //! Currently supports:
-//! - `stdio.h` - Standard I/O functions (printf, etc.)
+//! - `stdio.h` - Standard I/O functions (`printf`, `puts`, `putchar`)
+//! - `stdlib.h` - General utility functions (`abs`, `exit`)
+//! - `math.h` - Common math functions (`sqrt`, `pow`, `sin`, `cos`, `floor`, `ceil`)
 
 use crate::ast::{ExternFunction, Type};
 
