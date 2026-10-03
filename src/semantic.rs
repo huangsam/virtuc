@@ -228,6 +228,31 @@ impl SemanticAnalyzer {
                     None
                 }
             }
+            Expr::Unary { op, expr } => {
+                let ty = self.check_expr(expr)?;
+                match op {
+                    UnaryOp::Neg => {
+                        if ty == Type::Int || ty == Type::Float {
+                            Some(ty)
+                        } else {
+                            self.errors.push(SemanticError::TypeMismatch(
+                                "Unary minus requires int or float operand".to_string(),
+                            ));
+                            None
+                        }
+                    }
+                    UnaryOp::Not => {
+                        if ty == Type::Int || ty == Type::Float {
+                            Some(Type::Int)
+                        } else {
+                            self.errors.push(SemanticError::TypeMismatch(
+                                "Logical NOT requires int or float operand".to_string(),
+                            ));
+                            None
+                        }
+                    }
+                }
+            }
             Expr::Binary { left, op, right } => {
                 let left_ty = self.check_expr(left);
                 let right_ty = self.check_expr(right);

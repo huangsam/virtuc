@@ -56,6 +56,15 @@ pub enum BinOp {
     GreaterEqual,
 }
 
+/// Represents unary operators.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum UnaryOp {
+    /// Negation (-)
+    Neg,
+    /// Logical NOT (!)
+    Not,
+}
+
 /// Represents literal values.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Literal {
@@ -74,6 +83,11 @@ pub enum Expr {
     Literal(Literal),
     /// Variable identifier
     Identifier(String),
+    /// Unary operation
+    Unary {
+        op: UnaryOp,
+        expr: Box<Expr>,
+    },
     /// Binary operation
     Binary {
         left: Box<Expr>,

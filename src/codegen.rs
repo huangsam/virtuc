@@ -402,6 +402,65 @@ impl<'ctx> CodeGenerator<'ctx> {
                     Err(CodegenError(format!("Undefined variable: {}", name)))
                 }
             }
+            Expr::Unary { op, expr } => {
+                let val = self.generate_expr(expr)?;
+                match op {
+                    UnaryOp::Neg => {
+                        if val.get_type().is_int_type() {
+                            Ok(self
+                                .builder
+                                .build_int_neg(val.into_int_value(), "neg")
+                                .unwrap()
+                                .into())
+                        } else if val.get_type().is_float_type() {
+                            Ok(self
+                                .builder
+                                .build_float_neg(val.into_float_value(), "fneg")
+                                .unwrap()
+                                .into())
+                        } else {
+                            Err(CodegenError("Cannot negate non-numeric type".to_string()))
+                        }
+                    }
+                    UnaryOp::Not => {
+                        if val.get_type().is_int_type() {
+                            let cmp = self
+                                .builder
+                                .build_int_compare(
+                                    IntPredicate::EQ,
+                                    val.into_int_value(),
+                                    self.context.i64_type().const_zero(),
+                                    "not",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "not_ext")
+                                .unwrap()
+                                .into())
+                        } else if val.get_type().is_float_type() {
+                            let cmp = self
+                                .builder
+                                .build_float_compare(
+                                    FloatPredicate::OEQ,
+                                    val.into_float_value(),
+                                    self.context.f64_type().const_zero(),
+                                    "fnot",
+                                )
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "not_ext")
+                                .unwrap()
+                                .into())
+                        } else {
+                            Err(CodegenError(
+                                "Cannot apply logical NOT to non-numeric type".to_string(),
+                            ))
+                        }
+                    }
+                }
+            }
             Expr::Binary { left, op, right } => {
                 let left_val = self.generate_expr(left)?;
                 let right_val = self.generate_expr(right)?;

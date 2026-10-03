@@ -125,11 +125,35 @@ fn parse_call(input: &[Token]) -> IResult<&[Token], Expr> {
     )(input)
 }
 
-/// Parse multiplicative expression: primary (*|/|% primary)*
+/// Parse unary expression: (-|!) unary | primary
+fn parse_unary(input: &[Token]) -> IResult<&[Token], Expr> {
+    alt((
+        map(
+            tuple((
+                alt((token(Token::Minus), token(Token::Bang))),
+                parse_unary,
+            )),
+            |(op_token, expr)| {
+                let op = match op_token {
+                    Token::Minus => UnaryOp::Neg,
+                    Token::Bang => UnaryOp::Not,
+                    _ => unreachable!(),
+                };
+                Expr::Unary {
+                    op,
+                    expr: Box::new(expr),
+                }
+            },
+        ),
+        parse_primary_expr,
+    ))(input)
+}
+
+/// Parse multiplicative expression: unary (*|/|% unary)*
 /// Implements left-associative parsing for *, /, and % operators.
 /// Higher precedence than addition, so parses before additive.
 fn parse_multiplicative(input: &[Token]) -> IResult<&[Token], Expr> {
-    let (input, mut expr) = parse_primary_expr(input)?;
+    let (input, mut expr) = parse_unary(input)?;
     let mut input = input;
     // Loop to handle left-associative chaining: a * b % c -> ((a * b) % c)
     loop {
@@ -139,7 +163,7 @@ fn parse_multiplicative(input: &[Token]) -> IResult<&[Token], Expr> {
                 token(Token::Divide),
                 token(Token::Percent),
             )),
-            parse_primary_expr,
+            parse_unary,
         )))(input)?;
         if let Some((op_token, right)) = result.1 {
             let op = match op_token {

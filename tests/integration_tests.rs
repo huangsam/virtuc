@@ -371,3 +371,29 @@ fn test_modulo_operator() {
 
     assert_eq!(status.code(), Some(42));
 }
+
+#[test]
+fn test_unary_operators() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_unary");
+
+    let source = r#"
+        int main() {
+            int x = 10;
+            int neg = -x;       // -10
+            int pos = -neg;     // 10
+            int not_zero = !0;  // 1
+            int not_pos = !x;   // 0
+            int not_not = !(!x);// 1
+            // 10 + 10 + 20*not_zero + 2*not_not = 10 + 10 + 20 + 2 = 42
+            return pos + (-neg) + (20 * not_zero) + (2 * not_not);
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let status = Command::new(&output_path)
+        .status()
+        .expect("failed to run generated executable");
+
+    assert_eq!(status.code(), Some(42));
+}

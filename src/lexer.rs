@@ -145,6 +145,10 @@ pub enum Token {
     #[token("%")]
     Percent,
 
+    /// Logical NOT operator
+    #[token("!")]
+    Bang,
+
     /// Semicolon
     #[token(";")]
     Semicolon,
