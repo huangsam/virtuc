@@ -90,6 +90,7 @@ fn parse_binop(input: &[Token]) -> IResult<&[Token], BinOp> {
         map(token(Token::Minus), |_| BinOp::Minus),
         map(token(Token::Multiply), |_| BinOp::Multiply),
         map(token(Token::Divide), |_| BinOp::Divide),
+        map(token(Token::Percent), |_| BinOp::Modulo),
         map(token(Token::Equal), |_| BinOp::Equal),
         map(token(Token::NotEqual), |_| BinOp::NotEqual),
         map(token(Token::LessThan), |_| BinOp::LessThan),
@@ -124,22 +125,27 @@ fn parse_call(input: &[Token]) -> IResult<&[Token], Expr> {
     )(input)
 }
 
-/// Parse multiplicative expression: primary (*|/ primary)*
-/// Implements left-associative parsing for * and / operators.
+/// Parse multiplicative expression: primary (*|/|% primary)*
+/// Implements left-associative parsing for *, /, and % operators.
 /// Higher precedence than addition, so parses before additive.
 fn parse_multiplicative(input: &[Token]) -> IResult<&[Token], Expr> {
     let (input, mut expr) = parse_primary_expr(input)?;
     let mut input = input;
-    // Loop to handle left-associative chaining: a * b / c -> ((a * b) / c)
+    // Loop to handle left-associative chaining: a * b % c -> ((a * b) % c)
     loop {
         let result = opt(tuple((
-            alt((token(Token::Multiply), token(Token::Divide))),
+            alt((
+                token(Token::Multiply),
+                token(Token::Divide),
+                token(Token::Percent),
+            )),
             parse_primary_expr,
         )))(input)?;
         if let Some((op_token, right)) = result.1 {
             let op = match op_token {
                 Token::Multiply => BinOp::Multiply,
                 Token::Divide => BinOp::Divide,
+                Token::Percent => BinOp::Modulo,
                 _ => unreachable!(),
             };
             expr = Expr::Binary {

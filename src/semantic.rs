@@ -242,6 +242,16 @@ impl SemanticAnalyzer {
                             None
                         }
                     }
+                    BinOp::Modulo => {
+                        if left_ty == Some(Type::Int) && right_ty == Some(Type::Int) {
+                            Some(Type::Int)
+                        } else {
+                            self.errors.push(SemanticError::TypeMismatch(
+                                "Modulo operands must both be integers".to_string(),
+                            ));
+                            None
+                        }
+                    }
                     BinOp::Equal
                     | BinOp::NotEqual
                     | BinOp::LessThan

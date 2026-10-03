@@ -347,3 +347,27 @@ fn test_block_comments() {
 
     assert_eq!(status.code(), Some(42));
 }
+
+#[test]
+fn test_modulo_operator() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_modulo");
+
+    let source = r#"
+        int main() {
+            int a = 47;
+            int b = 10;
+            int rem = a % b; // 7
+            int even = 100 % 2; // 0
+            int odd = 101 % 2; // 1
+            return rem + even * 10 + odd * 35; // 7 + 0 + 35 = 42
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let status = Command::new(&output_path)
+        .status()
+        .expect("failed to run generated executable");
+
+    assert_eq!(status.code(), Some(42));
+}

@@ -40,6 +40,8 @@ pub enum BinOp {
     Multiply,
     /// Division
     Divide,
+    /// Modulo / remainder
+    Modulo,
     /// Equality comparison
     Equal,
     /// Inequality comparison

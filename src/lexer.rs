@@ -141,6 +141,10 @@ pub enum Token {
     #[token("/")]
     Divide,
 
+    /// Modulo operator
+    #[token("%")]
+    Percent,
+
     /// Semicolon
     #[token(";")]
     Semicolon,

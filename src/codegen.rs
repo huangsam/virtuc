@@ -498,6 +498,23 @@ impl<'ctx> CodeGenerator<'ctx> {
                                 .into())
                         }
                     }
+                    BinOp::Modulo => {
+                        if left_val.get_type().is_int_type() {
+                            Ok(self
+                                .builder
+                                .build_int_signed_rem(
+                                    left_val.into_int_value(),
+                                    right_val.into_int_value(),
+                                    "rem",
+                                )
+                                .unwrap()
+                                .into())
+                        } else {
+                            return Err(CodegenError(
+                                "Modulo operator requires integer operands".to_string(),
+                            ));
+                        }
+                    }
                     BinOp::Equal => {
                         if left_val.get_type().is_int_type() {
                             let cmp = self
