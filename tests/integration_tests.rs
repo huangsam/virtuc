@@ -423,3 +423,40 @@ fn test_while_loop() {
 
     assert_eq!(status.code(), Some(55));
 }
+
+#[test]
+fn test_increment_decrement_and_compound_assign() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_inc_dec");
+
+    let source = r#"
+        int main() {
+            int sum = 0;
+            // Test postfix in for loop update and += in body
+            for (int i = 0; i < 5; i++) {
+                sum += i; // 0 + 1 + 2 + 3 + 4 = 10
+            }
+
+            // Test prefix inc/dec
+            ++sum; // 11
+            --sum; // 10
+
+            // Test -=, *=, /=, %=
+            sum -= 2;  // 8
+            sum *= 6;  // 48
+            sum /= 2;  // 24
+            sum %= 10; // 4
+
+            // 4 * 10 + 2 = 42
+            int res = sum * 10 + 2;
+            return res;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let status = Command::new(&output_path)
+        .status()
+        .expect("failed to run generated executable");
+
+    assert_eq!(status.code(), Some(42));
+}

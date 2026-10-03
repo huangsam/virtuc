@@ -100,11 +100,34 @@ fn parse_binop(input: &[Token]) -> IResult<&[Token], BinOp> {
     ))(input)
 }
 
-/// Parse a primary expression: literal | identifier | (expr) | call
+/// Parse postfix expression: identifier++ | identifier--
+fn parse_postfix(input: &[Token]) -> IResult<&[Token], Expr> {
+    let (input, name) = parse_identifier(input)?;
+    let (input, op_token) = alt((token(Token::PlusPlus), token(Token::MinusMinus)))(input)?;
+    let op = match op_token {
+        Token::PlusPlus => BinOp::Plus,
+        Token::MinusMinus => BinOp::Minus,
+        _ => unreachable!(),
+    };
+    Ok((
+        input,
+        Expr::Assignment {
+            name: name.clone(),
+            value: Box::new(Expr::Binary {
+                left: Box::new(Expr::Identifier(name)),
+                op,
+                right: Box::new(Expr::Literal(Literal::Int(1))),
+            }),
+        },
+    ))
+}
+
+/// Parse a primary expression: literal | identifier | (expr) | call | postfix
 fn parse_primary_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
         map(parse_literal, Expr::Literal),
         parse_call,
+        parse_postfix,
         map(parse_identifier, Expr::Identifier),
         delimited(token(Token::LParen), parse_expr, token(Token::RParen)),
     ))(input)
@@ -125,9 +148,32 @@ fn parse_call(input: &[Token]) -> IResult<&[Token], Expr> {
     )(input)
 }
 
-/// Parse unary expression: (-|!) unary | primary
+/// Parse prefix inc/dec: ++identifier | --identifier
+fn parse_prefix_inc_dec(input: &[Token]) -> IResult<&[Token], Expr> {
+    let (input, op_token) = alt((token(Token::PlusPlus), token(Token::MinusMinus)))(input)?;
+    let (input, name) = parse_identifier(input)?;
+    let op = match op_token {
+        Token::PlusPlus => BinOp::Plus,
+        Token::MinusMinus => BinOp::Minus,
+        _ => unreachable!(),
+    };
+    Ok((
+        input,
+        Expr::Assignment {
+            name: name.clone(),
+            value: Box::new(Expr::Binary {
+                left: Box::new(Expr::Identifier(name)),
+                op,
+                right: Box::new(Expr::Literal(Literal::Int(1))),
+            }),
+        },
+    ))
+}
+
+/// Parse unary expression: (-|!) unary | (++|--) identifier | primary
 fn parse_unary(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
+        parse_prefix_inc_dec,
         map(
             tuple((
                 alt((token(Token::Minus), token(Token::Bang))),
@@ -236,7 +282,7 @@ fn parse_comparison(input: &[Token]) -> IResult<&[Token], Expr> {
     Ok((input, expr))
 }
 
-/// Parse an assignment expression: identifier = expr
+/// Parse an assignment expression: identifier (=|+=|-=|*=|/=|%=) expr
 fn parse_assignment_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
         map(
@@ -244,6 +290,37 @@ fn parse_assignment_expr(input: &[Token]) -> IResult<&[Token], Expr> {
             |(name, _, value)| Expr::Assignment {
                 name,
                 value: Box::new(value),
+            },
+        ),
+        map(
+            tuple((
+                parse_identifier,
+                alt((
+                    token(Token::PlusAssign),
+                    token(Token::MinusAssign),
+                    token(Token::MultiplyAssign),
+                    token(Token::DivideAssign),
+                    token(Token::ModuloAssign),
+                )),
+                parse_expr,
+            )),
+            |(name, op_token, value)| {
+                let op = match op_token {
+                    Token::PlusAssign => BinOp::Plus,
+                    Token::MinusAssign => BinOp::Minus,
+                    Token::MultiplyAssign => BinOp::Multiply,
+                    Token::DivideAssign => BinOp::Divide,
+                    Token::ModuloAssign => BinOp::Modulo,
+                    _ => unreachable!(),
+                };
+                Expr::Assignment {
+                    name: name.clone(),
+                    value: Box::new(Expr::Binary {
+                        left: Box::new(Expr::Identifier(name)),
+                        op,
+                        right: Box::new(value),
+                    }),
+                }
             },
         ),
         parse_comparison,

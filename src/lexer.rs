@@ -153,6 +153,34 @@ pub enum Token {
     #[token("!")]
     Bang,
 
+    /// Increment operator
+    #[token("++")]
+    PlusPlus,
+
+    /// Decrement operator
+    #[token("--")]
+    MinusMinus,
+
+    /// Add-assign operator
+    #[token("+=")]
+    PlusAssign,
+
+    /// Subtract-assign operator
+    #[token("-=")]
+    MinusAssign,
+
+    /// Multiply-assign operator
+    #[token("*=")]
+    MultiplyAssign,
+
+    /// Divide-assign operator
+    #[token("/=")]
+    DivideAssign,
+
+    /// Modulo-assign operator
+    #[token("%=")]
+    ModuloAssign,
+
     /// Semicolon
     #[token(";")]
     Semicolon,
