@@ -463,3 +463,46 @@ fn test_float_arrays_and_pointers() {
     assert!(res.stdout.contains("v0=3.0 v1=10.0 v2=7.0"));
 }
 
+#[test]
+fn test_stdio_puts_and_putchar() {
+    let source = r#"
+        #include <stdio.h>
+
+        int main() {
+            puts("Testing puts output");
+            putchar(65); // 'A'
+            putchar(66); // 'B'
+            putchar(10); // '\n'
+            return 0;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(0));
+    assert!(res.stdout.contains("Testing puts output\nAB\n"));
+}
+
+#[test]
+fn test_math_advanced_functions() {
+    let source = r#"
+        #include <stdio.h>
+        #include <math.h>
+
+        int main() {
+            float f1 = floor(4.8);   // 4.0
+            float c1 = ceil(4.2);    // 5.0
+            float a1 = fabs(-7.5);   // 7.5
+            float s0 = sin(0.0);     // 0.0
+            float c0 = cos(0.0);     // 1.0
+
+            printf("floor=%.1f ceil=%.1f fabs=%.1f sin=%.1f cos=%.1f\n", f1, c1, a1, s0, c0);
+            return 42;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+    assert!(res.stdout.contains("floor=4.0 ceil=5.0 fabs=7.5 sin=0.0 cos=1.0"));
+}
+
+
