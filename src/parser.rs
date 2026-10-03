@@ -899,7 +899,7 @@ mod tests {
         assert_eq!(extern_func.name, "printf");
         assert_eq!(extern_func.return_ty, Type::Int);
         assert_eq!(extern_func.param_types, vec![Type::Int, Type::Int]);
-        assert_eq!(extern_func.is_variadic, false);
+        assert!(!extern_func.is_variadic);
     }
 
     #[test]
@@ -910,7 +910,7 @@ mod tests {
         let extern_func = &ast.extern_functions[0];
         assert_eq!(extern_func.name, "printf");
         assert_eq!(extern_func.param_types, vec![Type::Int]);
-        assert_eq!(extern_func.is_variadic, true);
+        assert!(extern_func.is_variadic);
     }
 
     #[test]

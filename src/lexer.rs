@@ -336,6 +336,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_float_declaration() {
         let input = "float y = 3.14;";
         let expected = vec![
