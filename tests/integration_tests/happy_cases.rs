@@ -372,3 +372,94 @@ fn test_pointers_and_references() {
     assert_eq!(res.exit_code, Some(42));
     assert!(res.stdout.contains("val=25 a=2 b=1 arr1=5 elem2=30 same=1 diff=1 res=42"));
 }
+
+#[test]
+fn test_float_operations_and_comparisons() {
+    let source = r#"
+        #include <stdio.h>
+
+        float add(float a, float b) {
+            return a + b;
+        }
+
+        float sub(float a, float b) {
+            return a - b;
+        }
+
+        float mul(float a, float b) {
+            return a * b;
+        }
+
+        float div(float a, float b) {
+            return a / b;
+        }
+
+        int main() {
+            float x = 10.5;
+            float y = 2.5;
+
+            float a = add(x, y); // 13.0
+            float s = sub(x, y); // 8.0
+            float m = mul(x, y); // 26.25
+            float d = div(x, y); // 4.2
+            float neg = -x;      // -10.5
+
+            int cmp_lt = (x < y);    // 0
+            int cmp_le = (x <= 10.5); // 1
+            int cmp_gt = (x > y);    // 1
+            int cmp_ge = (y >= 2.5);  // 1
+            int cmp_eq = (x == 10.5); // 1
+            int cmp_ne = (x != y);   // 1
+
+            // Test float in if-condition
+            int cond_result = 0;
+            if (x > y) {
+                cond_result = 42;
+            }
+
+            printf("a=%.1f s=%.1f m=%.2f d=%.1f neg=%.1f\n", a, s, m, d, neg);
+            printf("cmp=%d%d%d%d%d%d cond=%d\n", cmp_lt, cmp_le, cmp_gt, cmp_ge, cmp_eq, cmp_ne, cond_result);
+            return cond_result;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+    assert!(res.stdout.contains("a=13.0 s=8.0 m=26.25 d=4.2 neg=-10.5"));
+    assert!(res.stdout.contains("cmp=011111 cond=42"));
+}
+
+#[test]
+fn test_float_arrays_and_pointers() {
+    let source = r#"
+        #include <stdio.h>
+
+        void scale(float* arr, int n, float factor) {
+            for (int i = 0; i < n; i++) {
+                arr[i] = arr[i] * factor;
+            }
+        }
+
+        int main() {
+            float vals[3];
+            vals[0] = 1.5;
+            vals[1] = 2.5;
+            vals[2] = 3.5;
+
+            // Pass array (decayed to pointer) to function
+            scale(vals, 3, 2.0); // vals become [3.0, 5.0, 7.0]
+
+            // Pointer to float
+            float* p = &vals[1];
+            *p = 10.0; // vals[1] becomes 10.0
+
+            printf("v0=%.1f v1=%.1f v2=%.1f\n", vals[0], vals[1], vals[2]);
+            return 42;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+    assert!(res.stdout.contains("v0=3.0 v1=10.0 v2=7.0"));
+}
+
