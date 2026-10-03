@@ -67,14 +67,14 @@ impl SemanticAnalyzer {
     /// Collects function declarations into the global symbol table.
     fn collect_functions(&mut self, program: &Program) {
         for function in &program.functions {
-            let param_types: Vec<Type> = function.params.iter().map(|(ty, _)| *ty).collect();
+            let param_types: Vec<Type> = function.params.iter().map(|(ty, _)| ty.clone()).collect();
             if self.functions.contains_key(&function.name) {
                 self.errors
                     .push(SemanticError::DuplicateVariable(function.name.clone()));
             } else {
                 self.functions.insert(
                     function.name.clone(),
-                    (function.return_ty, param_types, false),
+                    (function.return_ty.clone(), param_types, false),
                 );
             }
         }
@@ -86,7 +86,7 @@ impl SemanticAnalyzer {
                 self.functions.insert(
                     extern_func.name.clone(),
                     (
-                        extern_func.return_ty,
+                        extern_func.return_ty.clone(),
                         extern_func.param_types.clone(),
                         extern_func.is_variadic,
                     ),
@@ -97,11 +97,9 @@ impl SemanticAnalyzer {
         // Handle includes: map known headers to builtin externs
         for header in &program.includes {
             for ext in crate::header_registry::externs_for_header(header) {
-                if !self.functions.contains_key(&ext.name) {
-                    self.functions.insert(
-                        ext.name,
-                        (ext.return_ty, ext.param_types, ext.is_variadic),
-                    );
+                if let std::collections::hash_map::Entry::Vacant(e) = self.functions.entry(ext.name)
+                {
+                    e.insert((ext.return_ty.clone(), ext.param_types, ext.is_variadic));
                 }
             }
         }
@@ -110,8 +108,8 @@ impl SemanticAnalyzer {
     /// Analyzes a single function.
     fn analyze_function(&mut self, function: &Function) {
         // Set the expected return type for this function
-        let prev_return_type = self.current_return_type;
-        self.current_return_type = Some(function.return_ty);
+        let prev_return_type = self.current_return_type.clone();
+        self.current_return_type = Some(function.return_ty.clone());
 
         // Enter function scope
         self.scopes.push(HashMap::new());
@@ -123,7 +121,10 @@ impl SemanticAnalyzer {
                     "Parameter cannot have void type".to_string(),
                 ));
             }
-            self.scopes.last_mut().unwrap().insert(name.clone(), *ty);
+            self.scopes
+                .last_mut()
+                .unwrap()
+                .insert(name.clone(), ty.clone());
         }
         // Analyze body
         self.check_stmt(&function.body);
@@ -150,10 +151,13 @@ impl SemanticAnalyzer {
                     self.errors
                         .push(SemanticError::DuplicateVariable(name.clone()));
                 } else {
-                    self.scopes.last_mut().unwrap().insert(name.clone(), *ty);
+                    self.scopes
+                        .last_mut()
+                        .unwrap()
+                        .insert(name.clone(), ty.clone());
                     if let Some(expr) = init {
                         let expr_ty = self.check_expr(expr);
-                        if expr_ty != Some(*ty) {
+                        if expr_ty.as_ref() != Some(ty) {
                             self.errors.push(SemanticError::TypeMismatch(format!(
                                 "Cannot assign {:?} to {:?}",
                                 expr_ty, ty
@@ -182,19 +186,19 @@ impl SemanticAnalyzer {
                     self.array_scopes
                         .last_mut()
                         .unwrap()
-                        .insert(name.clone(), (*ty, *size));
+                        .insert(name.clone(), (ty.clone(), *size));
                 }
             }
             Stmt::Return(expr) => {
                 if let Some(e) = expr {
                     let expr_ty = self.check_expr(e);
                     // Only check return type if the expression type is valid (not None from undefined var)
-                    if let Some(expected_ty) = self.current_return_type {
-                        if expected_ty == Type::Void {
+                    if let Some(expected_ty) = &self.current_return_type {
+                        if *expected_ty == Type::Void {
                             self.errors.push(SemanticError::TypeMismatch(
                                 "Void function cannot return a value".to_string(),
                             ));
-                        } else if let Some(actual_ty) = expr_ty
+                        } else if let Some(actual_ty) = &expr_ty
                             && actual_ty != expected_ty
                         {
                             self.errors.push(SemanticError::TypeMismatch(format!(
@@ -203,14 +207,14 @@ impl SemanticAnalyzer {
                             )));
                         }
                     }
-                } else if let Some(expected_ty) = self.current_return_type {
-                    if expected_ty != Type::Void {
-                        // Function expects a return value but got bare 'return'
-                        self.errors.push(SemanticError::TypeMismatch(format!(
-                            "Function expects return value of type {:?}",
-                            expected_ty
-                        )));
-                    }
+                } else if let Some(expected_ty) = &self.current_return_type
+                    && *expected_ty != Type::Void
+                {
+                    // Function expects a return value but got bare 'return'
+                    self.errors.push(SemanticError::TypeMismatch(format!(
+                        "Function expects return value of type {:?}",
+                        expected_ty
+                    )));
                 }
             }
             Stmt::Block(stmts) => {
@@ -308,43 +312,90 @@ impl SemanticAnalyzer {
             Expr::Identifier(name) => {
                 if let Some(ty) = self.lookup_variable(name) {
                     Some(ty)
-                } else if self.lookup_array(name).is_some() {
-                    self.errors.push(SemanticError::TypeMismatch(format!(
-                        "Array '{}' cannot be used as a value without indexing",
-                        name
-                    )));
-                    None
+                } else if let Some((elem_ty, _)) = self.lookup_array(name) {
+                    Some(Type::Pointer(Box::new(elem_ty)))
                 } else {
                     self.errors
                         .push(SemanticError::UndefinedVariable(name.clone()));
                     None
                 }
             }
-            Expr::Unary { op, expr } => {
-                let ty = self.check_expr(expr)?;
-                match op {
-                    UnaryOp::Neg => {
-                        if ty == Type::Int || ty == Type::Float {
-                            Some(ty)
+            Expr::Unary { op, expr } => match op {
+                UnaryOp::Neg => {
+                    let ty = self.check_expr(expr)?;
+                    if ty == Type::Int || ty == Type::Float {
+                        Some(ty)
+                    } else {
+                        self.errors.push(SemanticError::TypeMismatch(
+                            "Unary minus requires int or float operand".to_string(),
+                        ));
+                        None
+                    }
+                }
+                UnaryOp::Not => {
+                    let ty = self.check_expr(expr)?;
+                    if ty == Type::Int || ty == Type::Float {
+                        Some(Type::Int)
+                    } else {
+                        self.errors.push(SemanticError::TypeMismatch(
+                            "Logical NOT requires int or float operand".to_string(),
+                        ));
+                        None
+                    }
+                }
+                UnaryOp::AddrOf => match &**expr {
+                    Expr::Identifier(name) => {
+                        if let Some(ty) = self.lookup_variable(name) {
+                            Some(Type::Pointer(Box::new(ty)))
+                        } else if let Some((elem_ty, _)) = self.lookup_array(name) {
+                            Some(Type::Pointer(Box::new(elem_ty)))
                         } else {
-                            self.errors.push(SemanticError::TypeMismatch(
-                                "Unary minus requires int or float operand".to_string(),
-                            ));
+                            self.errors
+                                .push(SemanticError::UndefinedVariable(name.clone()));
                             None
                         }
                     }
-                    UnaryOp::Not => {
-                        if ty == Type::Int || ty == Type::Float {
-                            Some(Type::Int)
-                        } else {
+                    Expr::Index { name, index } => {
+                        let idx_ty = self.check_expr(index);
+                        if idx_ty != Some(Type::Int) {
                             self.errors.push(SemanticError::TypeMismatch(
-                                "Logical NOT requires int or float operand".to_string(),
+                                "Array index must be an integer".to_string(),
+                            ));
+                        }
+                        if let Some((elem_ty, _)) = self.lookup_array(name) {
+                            Some(Type::Pointer(Box::new(elem_ty)))
+                        } else if let Some(Type::Pointer(elem_ty)) = self.lookup_variable(name) {
+                            Some(Type::Pointer(elem_ty))
+                        } else {
+                            self.errors
+                                .push(SemanticError::UndefinedVariable(name.clone()));
+                            None
+                        }
+                    }
+                    Expr::Unary {
+                        op: UnaryOp::Deref,
+                        expr: inner,
+                    } => self.check_expr(inner),
+                    _ => {
+                        self.errors.push(SemanticError::TypeMismatch(
+                            "Cannot take address of rvalue".to_string(),
+                        ));
+                        None
+                    }
+                },
+                UnaryOp::Deref => {
+                    let ty = self.check_expr(expr)?;
+                    match ty {
+                        Type::Pointer(inner) => Some(*inner),
+                        _ => {
+                            self.errors.push(SemanticError::TypeMismatch(
+                                "Cannot dereference non-pointer type".to_string(),
                             ));
                             None
                         }
                     }
                 }
-            }
+            },
             Expr::LogicalAnd { left, right } | Expr::LogicalOr { left, right } => {
                 let left_ty = self.check_expr(left);
                 let right_ty = self.check_expr(right);
@@ -363,7 +414,45 @@ impl SemanticAnalyzer {
                 let left_ty = self.check_expr(left);
                 let right_ty = self.check_expr(right);
                 match op {
-                    BinOp::Plus | BinOp::Minus | BinOp::Multiply | BinOp::Divide => {
+                    BinOp::Plus => {
+                        if left_ty == right_ty && left_ty.is_some() {
+                            left_ty
+                        } else if let (Some(Type::Pointer(_)), Some(Type::Int)) =
+                            (&left_ty, &right_ty)
+                        {
+                            left_ty
+                        } else if let (Some(Type::Int), Some(Type::Pointer(_))) =
+                            (&left_ty, &right_ty)
+                        {
+                            right_ty
+                        } else {
+                            self.errors.push(SemanticError::TypeMismatch(
+                                "Arithmetic operands must have same type or pointer + int"
+                                    .to_string(),
+                            ));
+                            None
+                        }
+                    }
+                    BinOp::Minus => {
+                        if left_ty == right_ty && left_ty.is_some() {
+                            if let Some(Type::Pointer(_)) = left_ty {
+                                Some(Type::Int)
+                            } else {
+                                left_ty
+                            }
+                        } else if let (Some(Type::Pointer(_)), Some(Type::Int)) =
+                            (&left_ty, &right_ty)
+                        {
+                            left_ty
+                        } else {
+                            self.errors.push(SemanticError::TypeMismatch(
+                                "Arithmetic operands must have same type or pointer - int"
+                                    .to_string(),
+                            ));
+                            None
+                        }
+                    }
+                    BinOp::Multiply | BinOp::Divide => {
                         if left_ty == right_ty && left_ty.is_some() {
                             left_ty
                         } else {
@@ -422,7 +511,7 @@ impl SemanticAnalyzer {
                     }
                     for (i, arg) in args.iter().enumerate().take(param_types.len()) {
                         let arg_ty = self.check_expr(arg);
-                        if arg_ty != Some(param_types[i]) {
+                        if arg_ty.as_ref() != Some(&param_types[i]) {
                             self.errors.push(SemanticError::TypeMismatch(format!(
                                 "Argument {} type mismatch",
                                 i
@@ -439,7 +528,7 @@ impl SemanticAnalyzer {
             Expr::Assignment { name, value } => {
                 let value_ty = self.check_expr(value);
                 if let Some(var_ty) = self.lookup_variable(name) {
-                    if value_ty != Some(var_ty) {
+                    if value_ty.as_ref() != Some(&var_ty) {
                         self.errors.push(SemanticError::TypeMismatch(format!(
                             "Cannot assign {:?} to {:?}",
                             value_ty, var_ty
@@ -461,6 +550,8 @@ impl SemanticAnalyzer {
                 }
                 if let Some((elem_ty, _)) = self.lookup_array(name) {
                     Some(elem_ty)
+                } else if let Some(Type::Pointer(elem_ty)) = self.lookup_variable(name) {
+                    Some(*elem_ty)
                 } else {
                     self.errors
                         .push(SemanticError::UndefinedVariable(name.clone()));
@@ -476,16 +567,42 @@ impl SemanticAnalyzer {
                 }
                 let val_ty = self.check_expr(value);
                 if let Some((elem_ty, _)) = self.lookup_array(name) {
-                    if val_ty != Some(elem_ty) {
+                    if val_ty.as_ref() != Some(&elem_ty) {
                         self.errors.push(SemanticError::TypeMismatch(format!(
                             "Cannot assign {:?} to array element of type {:?}",
                             val_ty, elem_ty
                         )));
                     }
                     Some(elem_ty)
+                } else if let Some(Type::Pointer(elem_ty)) = self.lookup_variable(name) {
+                    if val_ty.as_ref() != Some(&*elem_ty) {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Cannot assign {:?} to pointer element of type {:?}",
+                            val_ty, elem_ty
+                        )));
+                    }
+                    Some(*elem_ty)
                 } else {
                     self.errors
                         .push(SemanticError::UndefinedVariable(name.clone()));
+                    None
+                }
+            }
+            Expr::DerefAssignment { target, value } => {
+                let target_ty = self.check_expr(target);
+                let value_ty = self.check_expr(value);
+                if let Some(Type::Pointer(inner)) = target_ty {
+                    if value_ty.as_ref() != Some(&*inner) {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Cannot assign {:?} to dereferenced pointer of type {:?}",
+                            value_ty, inner
+                        )));
+                    }
+                    Some(*inner)
+                } else {
+                    self.errors.push(SemanticError::TypeMismatch(
+                        "Cannot dereference non-pointer type".to_string(),
+                    ));
                     None
                 }
             }
@@ -496,7 +613,7 @@ impl SemanticAnalyzer {
     fn lookup_variable(&self, name: &str) -> Option<Type> {
         for scope in self.scopes.iter().rev() {
             if let Some(ty) = scope.get(name) {
-                return Some(*ty);
+                return Some(ty.clone());
             }
         }
         None
@@ -506,7 +623,7 @@ impl SemanticAnalyzer {
     fn lookup_array(&self, name: &str) -> Option<(Type, usize)> {
         for scope in self.array_scopes.iter().rev() {
             if let Some(info) = scope.get(name) {
-                return Some(*info);
+                return Some(info.clone());
             }
         }
         None

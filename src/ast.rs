@@ -18,8 +18,8 @@
 //! lifetime management. Each node includes source location information for
 //! error reporting and debugging.
 
-/// Represents the primitive types in the C subset.
-#[derive(Debug, PartialEq, Clone, Copy)]
+/// Represents the primitive and derived types in the C subset.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Type {
     /// 64-bit integer type
     Int,
@@ -29,10 +29,12 @@ pub enum Type {
     String,
     /// Void type (for functions without return value)
     Void,
+    /// Pointer type (e.g. int*, void*)
+    Pointer(Box<Type>),
 }
 
 /// Represents binary operators.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum BinOp {
     /// Addition
     Plus,
@@ -59,12 +61,16 @@ pub enum BinOp {
 }
 
 /// Represents unary operators.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum UnaryOp {
     /// Negation (-)
     Neg,
     /// Logical NOT (!)
     Not,
+    /// Address-of (&)
+    AddrOf,
+    /// Dereference (*)
+    Deref,
 }
 
 /// Represents literal values.
@@ -86,10 +92,7 @@ pub enum Expr {
     /// Variable identifier
     Identifier(String),
     /// Unary operation
-    Unary {
-        op: UnaryOp,
-        expr: Box<Expr>,
-    },
+    Unary { op: UnaryOp, expr: Box<Expr> },
     /// Binary operation
     Binary {
         left: Box<Expr>,
@@ -97,26 +100,19 @@ pub enum Expr {
         right: Box<Expr>,
     },
     /// Short-circuiting logical AND (&&)
-    LogicalAnd {
-        left: Box<Expr>,
-        right: Box<Expr>,
-    },
+    LogicalAnd { left: Box<Expr>, right: Box<Expr> },
     /// Short-circuiting logical OR (||)
-    LogicalOr {
-        left: Box<Expr>,
-        right: Box<Expr>,
-    },
+    LogicalOr { left: Box<Expr>, right: Box<Expr> },
     /// Array indexing access: identifier[index]
-    Index {
-        name: String,
-        index: Box<Expr>,
-    },
+    Index { name: String, index: Box<Expr> },
     /// Array indexing assignment: identifier[index] = value
     IndexAssignment {
         name: String,
         index: Box<Expr>,
         value: Box<Expr>,
     },
+    /// Pointer dereference assignment: *target = value
+    DerefAssignment { target: Box<Expr>, value: Box<Expr> },
     /// Function call
     Call { name: String, args: Vec<Expr> },
     /// Assignment expression
@@ -133,11 +129,7 @@ pub enum Stmt {
         init: Option<Expr>,
     },
     /// Fixed-size array declaration: type name[size];
-    ArrayDeclaration {
-        ty: Type,
-        name: String,
-        size: usize,
-    },
+    ArrayDeclaration { ty: Type, name: String, size: usize },
     /// Return statement
     Return(Option<Expr>),
     /// Block of statements
@@ -156,10 +148,7 @@ pub enum Stmt {
         body: Box<Stmt>,
     },
     /// While loop
-    While {
-        cond: Expr,
-        body: Box<Stmt>,
-    },
+    While { cond: Expr, body: Box<Stmt> },
     /// Break statement
     Break,
     /// Continue statement

@@ -197,6 +197,10 @@ pub enum Token {
     #[token("&&")]
     LogicalAnd,
 
+    /// Ampersand (address-of operator)
+    #[token("&")]
+    Ampersand,
+
     /// Logical OR operator
     #[token("||")]
     LogicalOr,

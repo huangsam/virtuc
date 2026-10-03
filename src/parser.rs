@@ -50,14 +50,21 @@ fn token(expected: Token) -> impl Fn(&[Token]) -> IResult<&[Token], Token> {
     }
 }
 
-/// Parse a type: int | float | string | void
+/// Parse a type: (int | float | string | void) followed by zero or more '*'
 fn parse_type(input: &[Token]) -> IResult<&[Token], Type> {
-    alt((
+    let (input, base_ty) = alt((
         map(token(Token::Int), |_| Type::Int),
         map(token(Token::Float), |_| Type::Float),
         map(token(Token::StringType), |_| Type::String),
         map(token(Token::Void), |_| Type::Void),
-    ))(input)
+    ))(input)?;
+
+    let (input, stars) = many0(token(Token::Multiply))(input)?;
+    let mut ty = base_ty;
+    for _ in stars {
+        ty = Type::Pointer(Box::new(ty));
+    }
+    Ok((input, ty))
 }
 
 /// Parse an identifier
@@ -195,7 +202,7 @@ fn parse_call(input: &[Token]) -> IResult<&[Token], Expr> {
     )(input)
 }
 
-/// Parse prefix inc/dec: ++identifier | --identifier | ++identifier[expr] | --identifier[expr]
+/// Parse prefix inc/dec: ++identifier | --identifier | ++identifier[expr] | --identifier[expr] | ++*unary | --*unary
 fn parse_prefix_inc_dec(input: &[Token]) -> IResult<&[Token], Expr> {
     let (input, op_token) = alt((token(Token::PlusPlus), token(Token::MinusMinus)))(input)?;
     let op = match op_token {
@@ -203,10 +210,27 @@ fn parse_prefix_inc_dec(input: &[Token]) -> IResult<&[Token], Expr> {
         Token::MinusMinus => BinOp::Minus,
         _ => unreachable!(),
     };
+    if let Ok((rest, (_, target))) = tuple((token(Token::Multiply), parse_unary))(input) {
+        return Ok((
+            rest,
+            Expr::DerefAssignment {
+                target: Box::new(target.clone()),
+                value: Box::new(Expr::Binary {
+                    left: Box::new(Expr::Unary {
+                        op: UnaryOp::Deref,
+                        expr: Box::new(target),
+                    }),
+                    op,
+                    right: Box::new(Expr::Literal(Literal::Int(1))),
+                }),
+            },
+        ));
+    }
     if let Ok((rest, (name, index))) = tuple((
         parse_identifier,
         delimited(token(Token::LBracket), parse_expr, token(Token::RBracket)),
-    ))(input) {
+    ))(input)
+    {
         return Ok((
             rest,
             Expr::IndexAssignment {
@@ -237,19 +261,26 @@ fn parse_prefix_inc_dec(input: &[Token]) -> IResult<&[Token], Expr> {
     ))
 }
 
-/// Parse unary expression: (-|!) unary | (++|--) identifier | primary
+/// Parse unary expression: (-|!|&|*) unary | (++|--) identifier | primary
 fn parse_unary(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
         parse_prefix_inc_dec,
         map(
             tuple((
-                alt((token(Token::Minus), token(Token::Bang))),
+                alt((
+                    token(Token::Minus),
+                    token(Token::Bang),
+                    token(Token::Ampersand),
+                    token(Token::Multiply),
+                )),
                 parse_unary,
             )),
             |(op_token, expr)| {
                 let op = match op_token {
                     Token::Minus => UnaryOp::Neg,
                     Token::Bang => UnaryOp::Not,
+                    Token::Ampersand => UnaryOp::AddrOf,
+                    Token::Multiply => UnaryOp::Deref,
                     _ => unreachable!(),
                 };
                 Expr::Unary {
@@ -390,7 +421,8 @@ fn parse_logical_or(input: &[Token]) -> IResult<&[Token], Expr> {
 /// Parse array assignment: identifier [ expr ] (=|+=|-=|*=|/=|%=) expr
 fn parse_array_assignment(input: &[Token]) -> IResult<&[Token], Expr> {
     let (input, name) = parse_identifier(input)?;
-    let (input, index) = delimited(token(Token::LBracket), parse_expr, token(Token::RBracket))(input)?;
+    let (input, index) =
+        delimited(token(Token::LBracket), parse_expr, token(Token::RBracket))(input)?;
     let (input, op_token) = alt((
         token(Token::Assign),
         token(Token::PlusAssign),
@@ -437,9 +469,58 @@ fn parse_array_assignment(input: &[Token]) -> IResult<&[Token], Expr> {
     }
 }
 
-/// Parse an assignment expression: identifier (=|+=|-=|*=|/=|%=) expr | identifier [ expr ] (=|...) expr
+/// Parse dereference assignment: *unary (=|+=|-=|*=|/=|%=) expr
+fn parse_deref_assignment(input: &[Token]) -> IResult<&[Token], Expr> {
+    let (input, _) = token(Token::Multiply)(input)?;
+    let (input, target) = parse_unary(input)?;
+    let (input, op_token) = alt((
+        token(Token::Assign),
+        token(Token::PlusAssign),
+        token(Token::MinusAssign),
+        token(Token::MultiplyAssign),
+        token(Token::DivideAssign),
+        token(Token::ModuloAssign),
+    ))(input)?;
+    let (input, value) = parse_expr(input)?;
+    match op_token {
+        Token::Assign => Ok((
+            input,
+            Expr::DerefAssignment {
+                target: Box::new(target),
+                value: Box::new(value),
+            },
+        )),
+        op => {
+            let bin_op = match op {
+                Token::PlusAssign => BinOp::Plus,
+                Token::MinusAssign => BinOp::Minus,
+                Token::MultiplyAssign => BinOp::Multiply,
+                Token::DivideAssign => BinOp::Divide,
+                Token::ModuloAssign => BinOp::Modulo,
+                _ => unreachable!(),
+            };
+            Ok((
+                input,
+                Expr::DerefAssignment {
+                    target: Box::new(target.clone()),
+                    value: Box::new(Expr::Binary {
+                        left: Box::new(Expr::Unary {
+                            op: UnaryOp::Deref,
+                            expr: Box::new(target),
+                        }),
+                        op: bin_op,
+                        right: Box::new(value),
+                    }),
+                },
+            ))
+        }
+    }
+}
+
+/// Parse an assignment expression: identifier (=|+=|-=|*=|/=|%=) expr | identifier [ expr ] (=|...) expr | *unary (=|...) expr
 fn parse_assignment_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
+        parse_deref_assignment,
         parse_array_assignment,
         map(
             tuple((parse_identifier, token(Token::Assign), parse_expr)),
@@ -496,7 +577,12 @@ fn parse_array_declaration(input: &[Token]) -> IResult<&[Token], Stmt> {
     let (input, size_lit) = parse_literal(input)?;
     let size = match size_lit {
         Literal::Int(n) if n > 0 => n as usize,
-        _ => return Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Digit))),
+        _ => {
+            return Err(nom::Err::Error(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::Digit,
+            )));
+        }
     };
     let (input, _) = token(Token::RBracket)(input)?;
     let (input, _) = token(Token::Semicolon)(input)?;
@@ -867,6 +953,56 @@ mod tests {
             }
         } else {
             panic!("Expected block body");
+        }
+    }
+
+    #[test]
+    fn test_parse_pointers() {
+        let tokens =
+            lex("void swap(int* a, int* b) { int temp = *a; *a = *b; *b = temp; }").unwrap();
+        let ast = parse(&tokens).unwrap();
+        assert_eq!(ast.functions.len(), 1);
+        let f = &ast.functions[0];
+        assert_eq!(f.name, "swap");
+        assert_eq!(f.return_ty, Type::Void);
+        assert_eq!(
+            f.params,
+            vec![
+                (Type::Pointer(Box::new(Type::Int)), "a".to_string()),
+                (Type::Pointer(Box::new(Type::Int)), "b".to_string()),
+            ]
+        );
+        if let Stmt::Block(stmts) = &f.body {
+            assert_eq!(stmts.len(), 3);
+            // int temp = *a;
+            match &stmts[0] {
+                Stmt::Declaration { ty, name, init } => {
+                    assert_eq!(*ty, Type::Int);
+                    assert_eq!(name, "temp");
+                    match init {
+                        Some(Expr::Unary { op, expr }) => {
+                            assert_eq!(*op, UnaryOp::Deref);
+                            assert_eq!(**expr, Expr::Identifier("a".to_string()));
+                        }
+                        _ => panic!("Expected *a init"),
+                    }
+                }
+                _ => panic!("Expected temp decl"),
+            }
+            // *a = *b;
+            match &stmts[1] {
+                Stmt::Expr(Expr::DerefAssignment { target, value }) => {
+                    assert_eq!(**target, Expr::Identifier("a".to_string()));
+                    match &**value {
+                        Expr::Unary { op, expr } => {
+                            assert_eq!(*op, UnaryOp::Deref);
+                            assert_eq!(**expr, Expr::Identifier("b".to_string()));
+                        }
+                        _ => panic!("Expected *b rhs"),
+                    }
+                }
+                _ => panic!("Expected *a = *b deref assignment"),
+            }
         }
     }
 }

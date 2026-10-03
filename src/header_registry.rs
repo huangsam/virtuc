@@ -121,7 +121,10 @@ mod tests {
         let exts = externs_for_header("stdlib.h");
         assert_eq!(exts.len(), 2);
         assert!(exts.iter().any(|e| e.name == "abs"));
-        assert!(exts.iter().any(|e| e.name == "exit" && e.return_ty == Type::Void));
+        assert!(
+            exts.iter()
+                .any(|e| e.name == "exit" && e.return_ty == Type::Void)
+        );
     }
 
     #[test]

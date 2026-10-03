@@ -40,6 +40,8 @@ pub struct CodeGenerator<'ctx> {
     variables: HashMap<String, (PointerValue<'ctx>, Type)>,
     /// Array environment: name -> (pointer to array, element type, size)
     arrays: HashMap<String, (PointerValue<'ctx>, Type, usize)>,
+    /// Function return types
+    function_return_types: HashMap<String, Type>,
     /// Stack of loops: (break_target, continue_target)
     loop_stack: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
 }
@@ -63,12 +65,27 @@ impl<'ctx> CodeGenerator<'ctx> {
             builder,
             variables: HashMap::new(),
             arrays: HashMap::new(),
+            function_return_types: HashMap::new(),
             loop_stack: Vec::new(),
         }
     }
 
     /// Generates LLVM IR for the program.
     pub fn generate(&mut self, program: &Program) -> Result<(), CodegenError> {
+        for header in &program.includes {
+            for ext in crate::header_registry::externs_for_header(header) {
+                self.function_return_types
+                    .insert(ext.name.clone(), ext.return_ty);
+            }
+        }
+        for extern_func in &program.extern_functions {
+            self.function_return_types
+                .insert(extern_func.name.clone(), extern_func.return_ty.clone());
+        }
+        for function in &program.functions {
+            self.function_return_types
+                .insert(function.name.clone(), function.return_ty.clone());
+        }
         for extern_func in &program.extern_functions {
             self.declare_extern_function(extern_func)?;
         }
@@ -76,6 +93,101 @@ impl<'ctx> CodeGenerator<'ctx> {
             self.generate_function(function)?;
         }
         Ok(())
+    }
+
+    /// Determines the type of an expression during codegen.
+    fn expr_type(&self, expr: &Expr) -> Option<Type> {
+        match expr {
+            Expr::Literal(lit) => match lit {
+                Literal::Int(_) => Some(Type::Int),
+                Literal::Float(_) => Some(Type::Float),
+                Literal::String(_) => Some(Type::String),
+            },
+            Expr::Identifier(name) => {
+                if let Some((_, ty)) = self.variables.get(name) {
+                    Some(ty.clone())
+                } else if let Some((_, ty, _)) = self.arrays.get(name) {
+                    Some(Type::Pointer(Box::new(ty.clone())))
+                } else {
+                    None
+                }
+            }
+            Expr::Unary { op, expr } => match op {
+                UnaryOp::Neg => self.expr_type(expr),
+                UnaryOp::Not => Some(Type::Int),
+                UnaryOp::AddrOf => {
+                    let inner_ty = self.expr_type(expr)?;
+                    Some(Type::Pointer(Box::new(inner_ty)))
+                }
+                UnaryOp::Deref => {
+                    let inner_ty = self.expr_type(expr)?;
+                    match inner_ty {
+                        Type::Pointer(p) => Some(*p),
+                        _ => None,
+                    }
+                }
+            },
+            Expr::Binary { left, op, right } => match op {
+                BinOp::Plus => {
+                    let left_ty = self.expr_type(left)?;
+                    let right_ty = self.expr_type(right)?;
+                    if let Type::Pointer(_) = left_ty {
+                        Some(left_ty)
+                    } else if let Type::Pointer(_) = right_ty {
+                        Some(right_ty)
+                    } else {
+                        Some(left_ty)
+                    }
+                }
+                BinOp::Minus => {
+                    let left_ty = self.expr_type(left)?;
+                    let right_ty = self.expr_type(right)?;
+                    if let (Type::Pointer(_), Type::Pointer(_)) = (&left_ty, &right_ty) {
+                        Some(Type::Int)
+                    } else if let Type::Pointer(_) = left_ty {
+                        Some(left_ty)
+                    } else {
+                        Some(left_ty)
+                    }
+                }
+                BinOp::Modulo
+                | BinOp::Equal
+                | BinOp::NotEqual
+                | BinOp::LessThan
+                | BinOp::GreaterThan
+                | BinOp::LessEqual
+                | BinOp::GreaterEqual => Some(Type::Int),
+                _ => self.expr_type(left),
+            },
+            Expr::LogicalAnd { .. } | Expr::LogicalOr { .. } => Some(Type::Int),
+            Expr::Call { name, .. } => self.function_return_types.get(name).cloned(),
+            Expr::Assignment { name, .. } => self.variables.get(name).map(|(_, ty)| ty.clone()),
+            Expr::Index { name, .. } => {
+                if let Some((_, ty, _)) = self.arrays.get(name) {
+                    Some(ty.clone())
+                } else if let Some((_, Type::Pointer(elem_ty))) = self.variables.get(name) {
+                    Some(*elem_ty.clone())
+                } else {
+                    None
+                }
+            }
+            Expr::IndexAssignment { name, .. } => {
+                if let Some((_, ty, _)) = self.arrays.get(name) {
+                    Some(ty.clone())
+                } else if let Some((_, Type::Pointer(elem_ty))) = self.variables.get(name) {
+                    Some(*elem_ty.clone())
+                } else {
+                    None
+                }
+            }
+            Expr::DerefAssignment { target, .. } => {
+                let target_ty = self.expr_type(target)?;
+                match target_ty {
+                    Type::Pointer(p) => Some(*p),
+                    _ => None,
+                }
+            }
+        }
     }
 
     /// Gets the LLVM IR as a string.
@@ -91,7 +203,7 @@ impl<'ctx> CodeGenerator<'ctx> {
         let param_types: Vec<BasicMetadataTypeEnum> = extern_func
             .param_types
             .iter()
-            .map(|ty| self.llvm_type(*ty).into())
+            .map(|ty| self.llvm_type(ty).into())
             .collect();
         let fn_type = match extern_func.return_ty {
             Type::Void => self
@@ -99,7 +211,7 @@ impl<'ctx> CodeGenerator<'ctx> {
                 .void_type()
                 .fn_type(&param_types, extern_func.is_variadic),
             _ => self
-                .llvm_type(extern_func.return_ty)
+                .llvm_type(&extern_func.return_ty)
                 .fn_type(&param_types, extern_func.is_variadic),
         };
         self.module.add_function(&extern_func.name, fn_type, None);
@@ -112,12 +224,12 @@ impl<'ctx> CodeGenerator<'ctx> {
         let param_types: Vec<BasicMetadataTypeEnum> = function
             .params
             .iter()
-            .map(|(ty, _)| self.llvm_type(*ty).into())
+            .map(|(ty, _)| self.llvm_type(ty).into())
             .collect();
         let fn_type = match function.return_ty {
             Type::Void => self.context.void_type().fn_type(&param_types, false),
             _ => self
-                .llvm_type(function.return_ty)
+                .llvm_type(&function.return_ty)
                 .fn_type(&param_types, false),
         };
 
@@ -138,7 +250,7 @@ impl<'ctx> CodeGenerator<'ctx> {
             let param = llvm_function.get_nth_param(i as u32).unwrap();
             let alloca = self.builder.build_alloca(param.get_type(), name).unwrap();
             self.builder.build_store(alloca, param).unwrap();
-            self.variables.insert(name.clone(), (alloca, *ty));
+            self.variables.insert(name.clone(), (alloca, ty.clone()));
         }
 
         // Generate function body
@@ -169,6 +281,13 @@ impl<'ctx> CodeGenerator<'ctx> {
                 Type::Void => {
                     self.builder.build_return(None).unwrap();
                 }
+                Type::Pointer(_) => {
+                    self.builder
+                        .build_return(Some(
+                            &self.context.ptr_type(AddressSpace::default()).const_null(),
+                        ))
+                        .unwrap();
+                }
             }
         }
 
@@ -182,27 +301,28 @@ impl<'ctx> CodeGenerator<'ctx> {
 
     /// Generates a statement.
     fn generate_stmt(&mut self, stmt: &Stmt) -> Result<(), CodegenError> {
-        if let Some(block) = self.builder.get_insert_block() {
-            if block.get_terminator().is_some() {
-                // Block already terminated by return, break, or continue
-                return Ok(());
-            }
+        if let Some(block) = self.builder.get_insert_block()
+            && block.get_terminator().is_some()
+        {
+            // Block already terminated by return, break, or continue
+            return Ok(());
         }
         match stmt {
             Stmt::Declaration { ty, name, init } => {
-                let llvm_ty = self.llvm_type(*ty);
+                let llvm_ty = self.llvm_type(ty);
                 let alloca = self.builder.build_alloca(llvm_ty, name).unwrap();
-                self.variables.insert(name.clone(), (alloca, *ty));
+                self.variables.insert(name.clone(), (alloca, ty.clone()));
                 if let Some(expr) = init {
                     let value = self.generate_expr(expr)?;
                     self.builder.build_store(alloca, value).unwrap();
                 }
             }
             Stmt::ArrayDeclaration { ty, name, size } => {
-                let elem_llvm_ty = self.llvm_type(*ty);
+                let elem_llvm_ty = self.llvm_type(ty);
                 let arr_llvm_ty = elem_llvm_ty.array_type(*size as u32);
                 let alloca = self.builder.build_alloca(arr_llvm_ty, name).unwrap();
-                self.arrays.insert(name.clone(), (alloca, *ty, *size));
+                self.arrays
+                    .insert(name.clone(), (alloca, ty.clone(), *size));
             }
             Stmt::Return(expr) => {
                 if let Some(e) = expr {
@@ -422,7 +542,9 @@ impl<'ctx> CodeGenerator<'ctx> {
             }
             Stmt::Break => {
                 if let Some((break_target, _)) = self.loop_stack.last() {
-                    self.builder.build_unconditional_branch(*break_target).unwrap();
+                    self.builder
+                        .build_unconditional_branch(*break_target)
+                        .unwrap();
                 } else {
                     return Err(CodegenError("Break outside of loop".to_string()));
                 }
@@ -461,71 +583,152 @@ impl<'ctx> CodeGenerator<'ctx> {
                 if let Some((ptr, ty)) = self.variables.get(name) {
                     Ok(self
                         .builder
-                        .build_load(self.llvm_type(*ty), *ptr, name)
+                        .build_load(self.llvm_type(ty), *ptr, name)
                         .unwrap())
+                } else if let Some(&(ptr, ref ty, size)) = self.arrays.get(name) {
+                    let elem_llvm_ty = self.llvm_type(ty);
+                    let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
+                    let zero = self.context.i64_type().const_zero();
+                    let elem_ptr = unsafe {
+                        self.builder
+                            .build_in_bounds_gep(arr_llvm_ty, ptr, &[zero, zero], "decay")
+                            .unwrap()
+                    };
+                    Ok(elem_ptr.into())
                 } else {
                     Err(CodegenError(format!("Undefined variable: {}", name)))
                 }
             }
-            Expr::Unary { op, expr } => {
-                let val = self.generate_expr(expr)?;
-                match op {
-                    UnaryOp::Neg => {
-                        if val.get_type().is_int_type() {
-                            Ok(self
-                                .builder
-                                .build_int_neg(val.into_int_value(), "neg")
-                                .unwrap()
-                                .into())
-                        } else if val.get_type().is_float_type() {
-                            Ok(self
-                                .builder
-                                .build_float_neg(val.into_float_value(), "fneg")
-                                .unwrap()
-                                .into())
-                        } else {
-                            Err(CodegenError("Cannot negate non-numeric type".to_string()))
-                        }
-                    }
-                    UnaryOp::Not => {
-                        if val.get_type().is_int_type() {
-                            let cmp = self
-                                .builder
-                                .build_int_compare(
-                                    IntPredicate::EQ,
-                                    val.into_int_value(),
-                                    self.context.i64_type().const_zero(),
-                                    "not",
-                                )
-                                .unwrap();
-                            Ok(self
-                                .builder
-                                .build_int_z_extend(cmp, self.context.i64_type(), "not_ext")
-                                .unwrap()
-                                .into())
-                        } else if val.get_type().is_float_type() {
-                            let cmp = self
-                                .builder
-                                .build_float_compare(
-                                    FloatPredicate::OEQ,
-                                    val.into_float_value(),
-                                    self.context.f64_type().const_zero(),
-                                    "fnot",
-                                )
-                                .unwrap();
-                            Ok(self
-                                .builder
-                                .build_int_z_extend(cmp, self.context.i64_type(), "not_ext")
-                                .unwrap()
-                                .into())
-                        } else {
-                            Err(CodegenError(
-                                "Cannot apply logical NOT to non-numeric type".to_string(),
-                            ))
-                        }
+            Expr::Unary { op, expr } => match op {
+                UnaryOp::Neg => {
+                    let val = self.generate_expr(expr)?;
+                    if val.get_type().is_int_type() {
+                        Ok(self
+                            .builder
+                            .build_int_neg(val.into_int_value(), "neg")
+                            .unwrap()
+                            .into())
+                    } else if val.get_type().is_float_type() {
+                        Ok(self
+                            .builder
+                            .build_float_neg(val.into_float_value(), "fneg")
+                            .unwrap()
+                            .into())
+                    } else {
+                        Err(CodegenError("Cannot negate non-numeric type".to_string()))
                     }
                 }
-            }
+                UnaryOp::Not => {
+                    let val = self.generate_expr(expr)?;
+                    let bool_val = self.to_bool(val, "not.bool");
+                    let not_bool = self
+                        .builder
+                        .build_int_compare(
+                            IntPredicate::EQ,
+                            bool_val,
+                            self.context.bool_type().const_zero(),
+                            "not.inv",
+                        )
+                        .unwrap();
+                    let res = self
+                        .builder
+                        .build_int_z_extend(not_bool, self.context.i64_type(), "not.ext")
+                        .unwrap();
+                    Ok(res.into())
+                }
+                UnaryOp::AddrOf => match &**expr {
+                    Expr::Identifier(name) => {
+                        if let Some((ptr, _)) = self.variables.get(name) {
+                            Ok((*ptr).into())
+                        } else if let Some(&(ptr, ref ty, size)) = self.arrays.get(name) {
+                            let elem_llvm_ty = self.llvm_type(ty);
+                            let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
+                            let zero = self.context.i64_type().const_zero();
+                            let elem_ptr = unsafe {
+                                self.builder
+                                    .build_in_bounds_gep(
+                                        arr_llvm_ty,
+                                        ptr,
+                                        &[zero, zero],
+                                        "arr_decay",
+                                    )
+                                    .unwrap()
+                            };
+                            Ok(elem_ptr.into())
+                        } else {
+                            Err(CodegenError(format!("Undefined variable for & : {}", name)))
+                        }
+                    }
+                    Expr::Index { name, index } => {
+                        let idx_val = self.generate_expr(index)?;
+                        let idx_int = idx_val.into_int_value();
+                        if let Some(&(ptr, ref ty, size)) = self.arrays.get(name) {
+                            let elem_llvm_ty = self.llvm_type(ty);
+                            let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
+                            let zero = self.context.i64_type().const_zero();
+                            let elem_ptr = unsafe {
+                                self.builder
+                                    .build_in_bounds_gep(
+                                        arr_llvm_ty,
+                                        ptr,
+                                        &[zero, idx_int],
+                                        "arr_idx",
+                                    )
+                                    .unwrap()
+                            };
+                            Ok(elem_ptr.into())
+                        } else if let Some(&(ptr, ref var_ty)) = self.variables.get(name) {
+                            if let Type::Pointer(elem_ty) = var_ty {
+                                let elem_llvm_ty = self.llvm_type(elem_ty);
+                                let base_ptr = self
+                                    .builder
+                                    .build_load(self.llvm_type(var_ty), ptr, "ptr_base")
+                                    .unwrap()
+                                    .into_pointer_value();
+                                let elem_ptr = unsafe {
+                                    self.builder
+                                        .build_in_bounds_gep(
+                                            elem_llvm_ty,
+                                            base_ptr,
+                                            &[idx_int],
+                                            "ptr_idx",
+                                        )
+                                        .unwrap()
+                                };
+                                Ok(elem_ptr.into())
+                            } else {
+                                Err(CodegenError(format!(
+                                    "Cannot index non-pointer/array: {}",
+                                    name
+                                )))
+                            }
+                        } else {
+                            Err(CodegenError(format!("Undefined identifier: {}", name)))
+                        }
+                    }
+                    Expr::Unary {
+                        op: UnaryOp::Deref,
+                        expr: inner,
+                    } => self.generate_expr(inner),
+                    _ => Err(CodegenError("Cannot take address of rvalue".to_string())),
+                },
+                UnaryOp::Deref => {
+                    let target_ty = self.expr_type(expr).ok_or_else(|| {
+                        CodegenError("Cannot determine type of dereference operand".to_string())
+                    })?;
+                    let elem_ty = match target_ty {
+                        Type::Pointer(inner) => *inner,
+                        _ => {
+                            return Err(CodegenError("Cannot dereference non-pointer".to_string()));
+                        }
+                    };
+                    let elem_llvm_ty = self.llvm_type(&elem_ty);
+                    let ptr_val = self.generate_expr(expr)?;
+                    let ptr = ptr_val.into_pointer_value();
+                    let loaded = self.builder.build_load(elem_llvm_ty, ptr, "deref").unwrap();
+                    Ok(loaded)
+                }
+            },
             Expr::LogicalAnd { left, right } => {
                 let current_fn = self
                     .builder
@@ -550,7 +753,9 @@ impl<'ctx> CodeGenerator<'ctx> {
                 let rhs_val = self.generate_expr(right)?;
                 let rhs_eval_block = self.builder.get_insert_block().unwrap();
                 let rhs_bool = self.to_bool(rhs_val, "land.rhs.bool");
-                self.builder.build_unconditional_branch(merge_block).unwrap();
+                self.builder
+                    .build_unconditional_branch(merge_block)
+                    .unwrap();
 
                 // Merge block
                 self.builder.position_at_end(merge_block);
@@ -596,7 +801,9 @@ impl<'ctx> CodeGenerator<'ctx> {
                 let rhs_val = self.generate_expr(right)?;
                 let rhs_eval_block = self.builder.get_insert_block().unwrap();
                 let rhs_bool = self.to_bool(rhs_val, "lor.rhs.bool");
-                self.builder.build_unconditional_branch(merge_block).unwrap();
+                self.builder
+                    .build_unconditional_branch(merge_block)
+                    .unwrap();
 
                 // Merge block
                 self.builder.position_at_end(merge_block);
@@ -623,7 +830,41 @@ impl<'ctx> CodeGenerator<'ctx> {
                 let right_val = self.generate_expr(right)?;
                 match op {
                     BinOp::Plus => {
-                        if left_val.get_type().is_int_type() {
+                        if left_val.is_pointer_value() {
+                            let elem_ty = match self.expr_type(left) {
+                                Some(Type::Pointer(inner)) => *inner,
+                                _ => Type::Int,
+                            };
+                            let elem_llvm_ty = self.llvm_type(&elem_ty);
+                            let elem_ptr = unsafe {
+                                self.builder
+                                    .build_in_bounds_gep(
+                                        elem_llvm_ty,
+                                        left_val.into_pointer_value(),
+                                        &[right_val.into_int_value()],
+                                        "ptr_add",
+                                    )
+                                    .unwrap()
+                            };
+                            Ok(elem_ptr.into())
+                        } else if right_val.is_pointer_value() {
+                            let elem_ty = match self.expr_type(right) {
+                                Some(Type::Pointer(inner)) => *inner,
+                                _ => Type::Int,
+                            };
+                            let elem_llvm_ty = self.llvm_type(&elem_ty);
+                            let elem_ptr = unsafe {
+                                self.builder
+                                    .build_in_bounds_gep(
+                                        elem_llvm_ty,
+                                        right_val.into_pointer_value(),
+                                        &[left_val.into_int_value()],
+                                        "ptr_add",
+                                    )
+                                    .unwrap()
+                            };
+                            Ok(elem_ptr.into())
+                        } else if left_val.get_type().is_int_type() {
                             Ok(self
                                 .builder
                                 .build_int_add(
@@ -646,7 +887,28 @@ impl<'ctx> CodeGenerator<'ctx> {
                         }
                     }
                     BinOp::Minus => {
-                        if left_val.get_type().is_int_type() {
+                        if left_val.is_pointer_value() && right_val.get_type().is_int_type() {
+                            let elem_ty = match self.expr_type(left) {
+                                Some(Type::Pointer(inner)) => *inner,
+                                _ => Type::Int,
+                            };
+                            let elem_llvm_ty = self.llvm_type(&elem_ty);
+                            let neg_idx = self
+                                .builder
+                                .build_int_neg(right_val.into_int_value(), "neg_idx")
+                                .unwrap();
+                            let elem_ptr = unsafe {
+                                self.builder
+                                    .build_in_bounds_gep(
+                                        elem_llvm_ty,
+                                        left_val.into_pointer_value(),
+                                        &[neg_idx],
+                                        "ptr_sub",
+                                    )
+                                    .unwrap()
+                            };
+                            Ok(elem_ptr.into())
+                        } else if left_val.get_type().is_int_type() {
                             Ok(self
                                 .builder
                                 .build_int_sub(
@@ -726,13 +988,39 @@ impl<'ctx> CodeGenerator<'ctx> {
                                 .unwrap()
                                 .into())
                         } else {
-                            return Err(CodegenError(
+                            Err(CodegenError(
                                 "Modulo operator requires integer operands".to_string(),
-                            ));
+                            ))
                         }
                     }
                     BinOp::Equal => {
-                        if left_val.get_type().is_int_type() {
+                        if left_val.is_pointer_value() {
+                            let l_int = self
+                                .builder
+                                .build_ptr_to_int(
+                                    left_val.into_pointer_value(),
+                                    self.context.i64_type(),
+                                    "ptr_int",
+                                )
+                                .unwrap();
+                            let r_int = self
+                                .builder
+                                .build_ptr_to_int(
+                                    right_val.into_pointer_value(),
+                                    self.context.i64_type(),
+                                    "ptr_int",
+                                )
+                                .unwrap();
+                            let cmp = self
+                                .builder
+                                .build_int_compare(IntPredicate::EQ, l_int, r_int, "eq")
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
+                        } else if left_val.get_type().is_int_type() {
                             let cmp = self
                                 .builder
                                 .build_int_compare(
@@ -765,7 +1053,33 @@ impl<'ctx> CodeGenerator<'ctx> {
                         }
                     }
                     BinOp::NotEqual => {
-                        if left_val.get_type().is_int_type() {
+                        if left_val.is_pointer_value() {
+                            let l_int = self
+                                .builder
+                                .build_ptr_to_int(
+                                    left_val.into_pointer_value(),
+                                    self.context.i64_type(),
+                                    "ptr_int",
+                                )
+                                .unwrap();
+                            let r_int = self
+                                .builder
+                                .build_ptr_to_int(
+                                    right_val.into_pointer_value(),
+                                    self.context.i64_type(),
+                                    "ptr_int",
+                                )
+                                .unwrap();
+                            let cmp = self
+                                .builder
+                                .build_int_compare(IntPredicate::NE, l_int, r_int, "ne")
+                                .unwrap();
+                            Ok(self
+                                .builder
+                                .build_int_z_extend(cmp, self.context.i64_type(), "bool_ext")
+                                .unwrap()
+                                .into())
+                        } else if left_val.get_type().is_int_type() {
                             let cmp = self
                                 .builder
                                 .build_int_compare(
@@ -957,35 +1271,58 @@ impl<'ctx> CodeGenerator<'ctx> {
                 }
             }
             Expr::Index { name, index } => {
-                let (ptr, ty, size) = match self.arrays.get(name) {
-                    Some(&(ptr, ty, size)) => (ptr, ty, size),
-                    None => return Err(CodegenError(format!("Undefined array: {}", name))),
-                };
                 let idx_val = self.generate_expr(index)?;
                 let idx_int = if idx_val.get_type().is_int_type() {
                     idx_val.into_int_value()
                 } else {
                     return Err(CodegenError("Array index must be an integer".to_string()));
                 };
-                let elem_llvm_ty = self.llvm_type(ty);
-                let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
-                let zero = self.context.i64_type().const_zero();
-                let elem_ptr = unsafe {
-                    self.builder
-                        .build_in_bounds_gep(arr_llvm_ty, ptr, &[zero, idx_int], "arr_idx")
-                        .unwrap()
-                };
-                let val = self
-                    .builder
-                    .build_load(elem_llvm_ty, elem_ptr, "arr_elem")
-                    .unwrap();
-                Ok(val)
+                if let Some(&(ptr, ref ty, size)) = self.arrays.get(name) {
+                    let elem_llvm_ty = self.llvm_type(ty);
+                    let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
+                    let zero = self.context.i64_type().const_zero();
+                    let elem_ptr = unsafe {
+                        self.builder
+                            .build_in_bounds_gep(arr_llvm_ty, ptr, &[zero, idx_int], "arr_idx")
+                            .unwrap()
+                    };
+                    let val = self
+                        .builder
+                        .build_load(elem_llvm_ty, elem_ptr, "arr_elem")
+                        .unwrap();
+                    Ok(val)
+                } else if let Some(&(ptr, ref var_ty)) = self.variables.get(name) {
+                    if let Type::Pointer(elem_ty) = var_ty {
+                        let elem_llvm_ty = self.llvm_type(elem_ty);
+                        let base_ptr = self
+                            .builder
+                            .build_load(self.llvm_type(var_ty), ptr, "ptr_base")
+                            .unwrap()
+                            .into_pointer_value();
+                        let elem_ptr = unsafe {
+                            self.builder
+                                .build_in_bounds_gep(elem_llvm_ty, base_ptr, &[idx_int], "ptr_idx")
+                                .unwrap()
+                        };
+                        let val = self
+                            .builder
+                            .build_load(elem_llvm_ty, elem_ptr, "ptr_elem")
+                            .unwrap();
+                        Ok(val)
+                    } else {
+                        Err(CodegenError(format!(
+                            "Cannot index non-pointer/non-array variable: {}",
+                            name
+                        )))
+                    }
+                } else {
+                    Err(CodegenError(format!(
+                        "Undefined array or pointer: {}",
+                        name
+                    )))
+                }
             }
             Expr::IndexAssignment { name, index, value } => {
-                let (ptr, ty, size) = match self.arrays.get(name) {
-                    Some(&(ptr, ty, size)) => (ptr, ty, size),
-                    None => return Err(CodegenError(format!("Undefined array: {}", name))),
-                };
                 let val = self.generate_expr(value)?;
                 let idx_val = self.generate_expr(index)?;
                 let idx_int = if idx_val.get_type().is_int_type() {
@@ -993,15 +1330,50 @@ impl<'ctx> CodeGenerator<'ctx> {
                 } else {
                     return Err(CodegenError("Array index must be an integer".to_string()));
                 };
-                let elem_llvm_ty = self.llvm_type(ty);
-                let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
-                let zero = self.context.i64_type().const_zero();
-                let elem_ptr = unsafe {
-                    self.builder
-                        .build_in_bounds_gep(arr_llvm_ty, ptr, &[zero, idx_int], "arr_idx")
-                        .unwrap()
-                };
-                self.builder.build_store(elem_ptr, val).unwrap();
+                if let Some(&(ptr, ref ty, size)) = self.arrays.get(name) {
+                    let elem_llvm_ty = self.llvm_type(ty);
+                    let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
+                    let zero = self.context.i64_type().const_zero();
+                    let elem_ptr = unsafe {
+                        self.builder
+                            .build_in_bounds_gep(arr_llvm_ty, ptr, &[zero, idx_int], "arr_idx")
+                            .unwrap()
+                    };
+                    self.builder.build_store(elem_ptr, val).unwrap();
+                    Ok(val)
+                } else if let Some(&(ptr, ref var_ty)) = self.variables.get(name) {
+                    if let Type::Pointer(elem_ty) = var_ty {
+                        let elem_llvm_ty = self.llvm_type(elem_ty);
+                        let base_ptr = self
+                            .builder
+                            .build_load(self.llvm_type(var_ty), ptr, "ptr_base")
+                            .unwrap()
+                            .into_pointer_value();
+                        let elem_ptr = unsafe {
+                            self.builder
+                                .build_in_bounds_gep(elem_llvm_ty, base_ptr, &[idx_int], "ptr_idx")
+                                .unwrap()
+                        };
+                        self.builder.build_store(elem_ptr, val).unwrap();
+                        Ok(val)
+                    } else {
+                        Err(CodegenError(format!(
+                            "Cannot index non-pointer/non-array variable: {}",
+                            name
+                        )))
+                    }
+                } else {
+                    Err(CodegenError(format!(
+                        "Undefined array or pointer: {}",
+                        name
+                    )))
+                }
+            }
+            Expr::DerefAssignment { target, value } => {
+                let val = self.generate_expr(value)?;
+                let ptr_val = self.generate_expr(target)?;
+                let ptr = ptr_val.into_pointer_value();
+                self.builder.build_store(ptr, val).unwrap();
                 Ok(val)
             }
         }
@@ -1033,11 +1405,12 @@ impl<'ctx> CodeGenerator<'ctx> {
     }
 
     /// Maps C type to LLVM type.
-    fn llvm_type(&self, ty: Type) -> BasicTypeEnum<'ctx> {
+    fn llvm_type(&self, ty: &Type) -> BasicTypeEnum<'ctx> {
         match ty {
             Type::Int => self.context.i64_type().into(),
             Type::Float => self.context.f64_type().into(),
             Type::String => self.context.ptr_type(AddressSpace::default()).into(),
+            Type::Pointer(_) => self.context.ptr_type(AddressSpace::default()).into(),
             Type::Void => panic!("Void cannot be converted to BasicTypeEnum"),
         }
     }
