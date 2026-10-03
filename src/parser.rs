@@ -123,11 +123,57 @@ fn parse_postfix(input: &[Token]) -> IResult<&[Token], Expr> {
     ))
 }
 
-/// Parse a primary expression: literal | identifier | (expr) | call | postfix
+/// Parse an array index expression: identifier [ expr ]
+fn parse_index(input: &[Token]) -> IResult<&[Token], Expr> {
+    map(
+        tuple((
+            parse_identifier,
+            delimited(token(Token::LBracket), parse_expr, token(Token::RBracket)),
+        )),
+        |(name, index)| Expr::Index {
+            name,
+            index: Box::new(index),
+        },
+    )(input)
+}
+
+/// Parse array postfix: identifier [ expr ] (++|--)
+fn parse_array_postfix(input: &[Token]) -> IResult<&[Token], Expr> {
+    map(
+        tuple((
+            parse_identifier,
+            delimited(token(Token::LBracket), parse_expr, token(Token::RBracket)),
+            alt((token(Token::PlusPlus), token(Token::MinusMinus))),
+        )),
+        |(name, index, op_token)| {
+            let op = match op_token {
+                Token::PlusPlus => BinOp::Plus,
+                Token::MinusMinus => BinOp::Minus,
+                _ => unreachable!(),
+            };
+            Expr::IndexAssignment {
+                name: name.clone(),
+                index: Box::new(index.clone()),
+                value: Box::new(Expr::Binary {
+                    left: Box::new(Expr::Index {
+                        name,
+                        index: Box::new(index),
+                    }),
+                    op,
+                    right: Box::new(Expr::Literal(Literal::Int(1))),
+                }),
+            }
+        },
+    )(input)
+}
+
+/// Parse a primary expression: literal | identifier | (expr) | call | postfix | index
 fn parse_primary_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
         map(parse_literal, Expr::Literal),
         parse_call,
+        parse_array_postfix,
+        parse_index,
         parse_postfix,
         map(parse_identifier, Expr::Identifier),
         delimited(token(Token::LParen), parse_expr, token(Token::RParen)),
@@ -149,15 +195,35 @@ fn parse_call(input: &[Token]) -> IResult<&[Token], Expr> {
     )(input)
 }
 
-/// Parse prefix inc/dec: ++identifier | --identifier
+/// Parse prefix inc/dec: ++identifier | --identifier | ++identifier[expr] | --identifier[expr]
 fn parse_prefix_inc_dec(input: &[Token]) -> IResult<&[Token], Expr> {
     let (input, op_token) = alt((token(Token::PlusPlus), token(Token::MinusMinus)))(input)?;
-    let (input, name) = parse_identifier(input)?;
     let op = match op_token {
         Token::PlusPlus => BinOp::Plus,
         Token::MinusMinus => BinOp::Minus,
         _ => unreachable!(),
     };
+    if let Ok((rest, (name, index))) = tuple((
+        parse_identifier,
+        delimited(token(Token::LBracket), parse_expr, token(Token::RBracket)),
+    ))(input) {
+        return Ok((
+            rest,
+            Expr::IndexAssignment {
+                name: name.clone(),
+                index: Box::new(index.clone()),
+                value: Box::new(Expr::Binary {
+                    left: Box::new(Expr::Index {
+                        name,
+                        index: Box::new(index),
+                    }),
+                    op,
+                    right: Box::new(Expr::Literal(Literal::Int(1))),
+                }),
+            },
+        ));
+    }
+    let (input, name) = parse_identifier(input)?;
     Ok((
         input,
         Expr::Assignment {
@@ -321,9 +387,60 @@ fn parse_logical_or(input: &[Token]) -> IResult<&[Token], Expr> {
     Ok((input, expr))
 }
 
-/// Parse an assignment expression: identifier (=|+=|-=|*=|/=|%=) expr
+/// Parse array assignment: identifier [ expr ] (=|+=|-=|*=|/=|%=) expr
+fn parse_array_assignment(input: &[Token]) -> IResult<&[Token], Expr> {
+    let (input, name) = parse_identifier(input)?;
+    let (input, index) = delimited(token(Token::LBracket), parse_expr, token(Token::RBracket))(input)?;
+    let (input, op_token) = alt((
+        token(Token::Assign),
+        token(Token::PlusAssign),
+        token(Token::MinusAssign),
+        token(Token::MultiplyAssign),
+        token(Token::DivideAssign),
+        token(Token::ModuloAssign),
+    ))(input)?;
+    let (input, value) = parse_expr(input)?;
+    match op_token {
+        Token::Assign => Ok((
+            input,
+            Expr::IndexAssignment {
+                name,
+                index: Box::new(index),
+                value: Box::new(value),
+            },
+        )),
+        op => {
+            let bin_op = match op {
+                Token::PlusAssign => BinOp::Plus,
+                Token::MinusAssign => BinOp::Minus,
+                Token::MultiplyAssign => BinOp::Multiply,
+                Token::DivideAssign => BinOp::Divide,
+                Token::ModuloAssign => BinOp::Modulo,
+                _ => unreachable!(),
+            };
+            Ok((
+                input,
+                Expr::IndexAssignment {
+                    name: name.clone(),
+                    index: Box::new(index.clone()),
+                    value: Box::new(Expr::Binary {
+                        left: Box::new(Expr::Index {
+                            name,
+                            index: Box::new(index),
+                        }),
+                        op: bin_op,
+                        right: Box::new(value),
+                    }),
+                },
+            ))
+        }
+    }
+}
+
+/// Parse an assignment expression: identifier (=|+=|-=|*=|/=|%=) expr | identifier [ expr ] (=|...) expr
 fn parse_assignment_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
+        parse_array_assignment,
         map(
             tuple((parse_identifier, token(Token::Assign), parse_expr)),
             |(name, _, value)| Expr::Assignment {
@@ -369,6 +486,21 @@ fn parse_assignment_expr(input: &[Token]) -> IResult<&[Token], Expr> {
 /// Parse expression (top level)
 fn parse_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     parse_assignment_expr(input)
+}
+
+/// Parse an array declaration: type identifier [ int_literal ] ;
+fn parse_array_declaration(input: &[Token]) -> IResult<&[Token], Stmt> {
+    let (input, ty) = parse_type(input)?;
+    let (input, name) = parse_identifier(input)?;
+    let (input, _) = token(Token::LBracket)(input)?;
+    let (input, size_lit) = parse_literal(input)?;
+    let size = match size_lit {
+        Literal::Int(n) if n > 0 => n as usize,
+        _ => return Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Digit))),
+    };
+    let (input, _) = token(Token::RBracket)(input)?;
+    let (input, _) = token(Token::Semicolon)(input)?;
+    Ok((input, Stmt::ArrayDeclaration { ty, name, size }))
 }
 
 /// Parse a declaration: type identifier (= expr)? ;
@@ -438,6 +570,7 @@ fn parse_for(input: &[Token]) -> IResult<&[Token], Stmt> {
                 token(Token::LParen),
                 tuple((
                     alt((
+                        map(parse_array_declaration, |s| Some(Box::new(s))),
                         map(parse_declaration, |s| Some(Box::new(s))),
                         map(parse_expr_stmt, |s| Some(Box::new(s))),
                         map(token(Token::Semicolon), |_| None),
@@ -497,6 +630,7 @@ fn parse_expr_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
 /// Parse a statement
 fn parse_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
     alt((
+        parse_array_declaration,
         parse_declaration,
         parse_return,
         parse_if,
@@ -699,5 +833,40 @@ mod tests {
         let ast = parse(&tokens).unwrap();
         assert_eq!(ast.includes.len(), 1);
         assert_eq!(ast.includes[0], "stdio.h");
+    }
+
+    #[test]
+    fn test_parse_array() {
+        let tokens = lex("int main() { int arr[5]; arr[0] = 42; return arr[0]; }").unwrap();
+        let ast = parse(&tokens).unwrap();
+        assert_eq!(ast.functions.len(), 1);
+        if let Stmt::Block(stmts) = &ast.functions[0].body {
+            assert_eq!(stmts.len(), 3);
+            match &stmts[0] {
+                Stmt::ArrayDeclaration { ty, name, size } => {
+                    assert_eq!(*ty, Type::Int);
+                    assert_eq!(name, "arr");
+                    assert_eq!(*size, 5);
+                }
+                _ => panic!("Expected array declaration"),
+            }
+            match &stmts[1] {
+                Stmt::Expr(Expr::IndexAssignment { name, index, value }) => {
+                    assert_eq!(name, "arr");
+                    assert_eq!(**index, Expr::Literal(Literal::Int(0)));
+                    assert_eq!(**value, Expr::Literal(Literal::Int(42)));
+                }
+                _ => panic!("Expected index assignment"),
+            }
+            match &stmts[2] {
+                Stmt::Return(Some(Expr::Index { name, index })) => {
+                    assert_eq!(name, "arr");
+                    assert_eq!(**index, Expr::Literal(Literal::Int(0)));
+                }
+                _ => panic!("Expected return with index expr"),
+            }
+        } else {
+            panic!("Expected block body");
+        }
     }
 }

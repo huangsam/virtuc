@@ -106,6 +106,17 @@ pub enum Expr {
         left: Box<Expr>,
         right: Box<Expr>,
     },
+    /// Array indexing access: identifier[index]
+    Index {
+        name: String,
+        index: Box<Expr>,
+    },
+    /// Array indexing assignment: identifier[index] = value
+    IndexAssignment {
+        name: String,
+        index: Box<Expr>,
+        value: Box<Expr>,
+    },
     /// Function call
     Call { name: String, args: Vec<Expr> },
     /// Assignment expression
@@ -120,6 +131,12 @@ pub enum Stmt {
         ty: Type,
         name: String,
         init: Option<Expr>,
+    },
+    /// Fixed-size array declaration: type name[size];
+    ArrayDeclaration {
+        ty: Type,
+        name: String,
+        size: usize,
     },
     /// Return statement
     Return(Option<Expr>),

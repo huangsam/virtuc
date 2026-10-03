@@ -225,6 +225,14 @@ pub enum Token {
     #[token("}")]
     RBrace,
 
+    /// Left bracket
+    #[token("[")]
+    LBracket,
+
+    /// Right bracket
+    #[token("]")]
+    RBracket,
+
     /// Ellipsis for variadic functions
     #[token("...")]
     Ellipsis,

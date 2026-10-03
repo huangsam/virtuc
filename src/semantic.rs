@@ -26,6 +26,8 @@ pub struct SemanticAnalyzer {
     functions: HashMap<String, (Type, Vec<Type>, bool)>,
     /// Stack of scopes for variables: each scope is name -> type
     scopes: Vec<HashMap<String, Type>>,
+    /// Stack of scopes for arrays: each scope is name -> (element type, size)
+    array_scopes: Vec<HashMap<String, (Type, usize)>>,
     /// Current function's expected return type (during analysis)
     current_return_type: Option<Type>,
     /// Loop nesting depth
@@ -46,6 +48,7 @@ impl SemanticAnalyzer {
         Self {
             functions: HashMap::new(),
             scopes: vec![HashMap::new()], // Global scope
+            array_scopes: vec![HashMap::new()],
             current_return_type: None,
             loop_depth: 0,
             errors: Vec::new(),
@@ -112,6 +115,7 @@ impl SemanticAnalyzer {
 
         // Enter function scope
         self.scopes.push(HashMap::new());
+        self.array_scopes.push(HashMap::new());
         // Add parameters to scope
         for (ty, name) in &function.params {
             if *ty == Type::Void {
@@ -128,6 +132,7 @@ impl SemanticAnalyzer {
         self.current_return_type = prev_return_type;
         // Pop function scope
         self.scopes.pop();
+        self.array_scopes.pop();
     }
 
     /// Checks a statement.
@@ -139,7 +144,9 @@ impl SemanticAnalyzer {
                         "Variable cannot have void type".to_string(),
                     ));
                 }
-                if self.scopes.last().unwrap().contains_key(name) {
+                if self.scopes.last().unwrap().contains_key(name)
+                    || self.array_scopes.last().unwrap().contains_key(name)
+                {
                     self.errors
                         .push(SemanticError::DuplicateVariable(name.clone()));
                 } else {
@@ -153,6 +160,29 @@ impl SemanticAnalyzer {
                             )));
                         }
                     }
+                }
+            }
+            Stmt::ArrayDeclaration { ty, name, size } => {
+                if *ty == Type::Void {
+                    self.errors.push(SemanticError::TypeMismatch(
+                        "Array element cannot have void type".to_string(),
+                    ));
+                }
+                if *size == 0 {
+                    self.errors.push(SemanticError::TypeMismatch(
+                        "Array size must be greater than zero".to_string(),
+                    ));
+                }
+                if self.scopes.last().unwrap().contains_key(name)
+                    || self.array_scopes.last().unwrap().contains_key(name)
+                {
+                    self.errors
+                        .push(SemanticError::DuplicateVariable(name.clone()));
+                } else {
+                    self.array_scopes
+                        .last_mut()
+                        .unwrap()
+                        .insert(name.clone(), (*ty, *size));
                 }
             }
             Stmt::Return(expr) => {
@@ -185,10 +215,12 @@ impl SemanticAnalyzer {
             }
             Stmt::Block(stmts) => {
                 self.scopes.push(HashMap::new());
+                self.array_scopes.push(HashMap::new());
                 for stmt in stmts {
                     self.check_stmt(stmt);
                 }
                 self.scopes.pop();
+                self.array_scopes.pop();
             }
             Stmt::If { cond, then, else_ } => {
                 let cond_ty = self.check_expr(cond);
@@ -209,6 +241,7 @@ impl SemanticAnalyzer {
                 body,
             } => {
                 self.scopes.push(HashMap::new());
+                self.array_scopes.push(HashMap::new());
                 if let Some(init_stmt) = init {
                     self.check_stmt(init_stmt);
                 }
@@ -227,6 +260,7 @@ impl SemanticAnalyzer {
                 self.check_stmt(body);
                 self.loop_depth -= 1;
                 self.scopes.pop();
+                self.array_scopes.pop();
             }
             Stmt::While { cond, body } => {
                 let cond_ty = self.check_expr(cond);
@@ -236,10 +270,12 @@ impl SemanticAnalyzer {
                     ));
                 }
                 self.scopes.push(HashMap::new());
+                self.array_scopes.push(HashMap::new());
                 self.loop_depth += 1;
                 self.check_stmt(body);
                 self.loop_depth -= 1;
                 self.scopes.pop();
+                self.array_scopes.pop();
             }
             Stmt::Break => {
                 if self.loop_depth == 0 {
@@ -272,6 +308,12 @@ impl SemanticAnalyzer {
             Expr::Identifier(name) => {
                 if let Some(ty) = self.lookup_variable(name) {
                     Some(ty)
+                } else if self.lookup_array(name).is_some() {
+                    self.errors.push(SemanticError::TypeMismatch(format!(
+                        "Array '{}' cannot be used as a value without indexing",
+                        name
+                    )));
+                    None
                 } else {
                     self.errors
                         .push(SemanticError::UndefinedVariable(name.clone()));
@@ -410,6 +452,43 @@ impl SemanticAnalyzer {
                     None
                 }
             }
+            Expr::Index { name, index } => {
+                let idx_ty = self.check_expr(index);
+                if idx_ty != Some(Type::Int) {
+                    self.errors.push(SemanticError::TypeMismatch(
+                        "Array index must be an integer".to_string(),
+                    ));
+                }
+                if let Some((elem_ty, _)) = self.lookup_array(name) {
+                    Some(elem_ty)
+                } else {
+                    self.errors
+                        .push(SemanticError::UndefinedVariable(name.clone()));
+                    None
+                }
+            }
+            Expr::IndexAssignment { name, index, value } => {
+                let idx_ty = self.check_expr(index);
+                if idx_ty != Some(Type::Int) {
+                    self.errors.push(SemanticError::TypeMismatch(
+                        "Array index must be an integer".to_string(),
+                    ));
+                }
+                let val_ty = self.check_expr(value);
+                if let Some((elem_ty, _)) = self.lookup_array(name) {
+                    if val_ty != Some(elem_ty) {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Cannot assign {:?} to array element of type {:?}",
+                            val_ty, elem_ty
+                        )));
+                    }
+                    Some(elem_ty)
+                } else {
+                    self.errors
+                        .push(SemanticError::UndefinedVariable(name.clone()));
+                    None
+                }
+            }
         }
     }
 
@@ -418,6 +497,16 @@ impl SemanticAnalyzer {
         for scope in self.scopes.iter().rev() {
             if let Some(ty) = scope.get(name) {
                 return Some(*ty);
+            }
+        }
+        None
+    }
+
+    /// Looks up an array in the current scopes.
+    fn lookup_array(&self, name: &str) -> Option<(Type, usize)> {
+        for scope in self.array_scopes.iter().rev() {
+            if let Some(info) = scope.get(name) {
+                return Some(*info);
             }
         }
         None
@@ -511,5 +600,24 @@ mod tests {
         let ast = parse(&tokens).unwrap();
         let errors = analyze(&ast);
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_valid_array_operations() {
+        let input = "int test() { int arr[10]; arr[0] = 5; return arr[0]; }";
+        let tokens = lex(input).unwrap();
+        let ast = parse(&tokens).unwrap();
+        let errors = analyze(&ast);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_invalid_array_type_mismatch() {
+        let input = "int test() { int arr[10]; arr[0] = 3.14; return arr[0]; }";
+        let tokens = lex(input).unwrap();
+        let ast = parse(&tokens).unwrap();
+        let errors = analyze(&ast);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::TypeMismatch(_)));
     }
 }

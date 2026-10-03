@@ -625,3 +625,41 @@ fn test_math_header() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("sqrt=4.0 pow=8.0"));
 }
+
+#[test]
+fn test_1d_arrays() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_arrays");
+
+    let source = r#"
+        #include <stdio.h>
+
+        int main() {
+            int arr[5];
+            for (int i = 0; i < 5; i++) {
+                arr[i] = (i + 1) * 10;
+            }
+
+            // arr is now [10, 20, 30, 40, 50]
+            arr[2] += 5; // arr[2] = 35
+            arr[4]++;    // arr[4] = 51
+
+            int sum = 0;
+            for (int i = 0; i < 5; i++) {
+                sum += arr[i];
+            }
+            // sum = 10 + 20 + 35 + 40 + 51 = 156
+            printf("sum=%d\n", sum);
+            return sum;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let output = Command::new(&output_path)
+        .output()
+        .expect("failed to run generated executable");
+
+    assert_eq!(output.status.code(), Some(156));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("sum=156"));
+}

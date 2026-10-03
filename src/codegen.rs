@@ -38,6 +38,8 @@ pub struct CodeGenerator<'ctx> {
     builder: Builder<'ctx>,
     /// Variable environment: name -> (pointer to value, type)
     variables: HashMap<String, (PointerValue<'ctx>, Type)>,
+    /// Array environment: name -> (pointer to array, element type, size)
+    arrays: HashMap<String, (PointerValue<'ctx>, Type, usize)>,
     /// Stack of loops: (break_target, continue_target)
     loop_stack: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
 }
@@ -60,6 +62,7 @@ impl<'ctx> CodeGenerator<'ctx> {
             module,
             builder,
             variables: HashMap::new(),
+            arrays: HashMap::new(),
             loop_stack: Vec::new(),
         }
     }
@@ -127,6 +130,7 @@ impl<'ctx> CodeGenerator<'ctx> {
 
         // Clear variables for new function
         self.variables.clear();
+        self.arrays.clear();
         self.loop_stack.clear();
 
         // Allocate parameters
@@ -193,6 +197,12 @@ impl<'ctx> CodeGenerator<'ctx> {
                     let value = self.generate_expr(expr)?;
                     self.builder.build_store(alloca, value).unwrap();
                 }
+            }
+            Stmt::ArrayDeclaration { ty, name, size } => {
+                let elem_llvm_ty = self.llvm_type(*ty);
+                let arr_llvm_ty = elem_llvm_ty.array_type(*size as u32);
+                let alloca = self.builder.build_alloca(arr_llvm_ty, name).unwrap();
+                self.arrays.insert(name.clone(), (alloca, *ty, *size));
             }
             Stmt::Return(expr) => {
                 if let Some(e) = expr {
@@ -945,6 +955,54 @@ impl<'ctx> CodeGenerator<'ctx> {
                 } else {
                     Err(CodegenError(format!("Undefined variable: {}", name)))
                 }
+            }
+            Expr::Index { name, index } => {
+                let (ptr, ty, size) = match self.arrays.get(name) {
+                    Some(&(ptr, ty, size)) => (ptr, ty, size),
+                    None => return Err(CodegenError(format!("Undefined array: {}", name))),
+                };
+                let idx_val = self.generate_expr(index)?;
+                let idx_int = if idx_val.get_type().is_int_type() {
+                    idx_val.into_int_value()
+                } else {
+                    return Err(CodegenError("Array index must be an integer".to_string()));
+                };
+                let elem_llvm_ty = self.llvm_type(ty);
+                let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
+                let zero = self.context.i64_type().const_zero();
+                let elem_ptr = unsafe {
+                    self.builder
+                        .build_in_bounds_gep(arr_llvm_ty, ptr, &[zero, idx_int], "arr_idx")
+                        .unwrap()
+                };
+                let val = self
+                    .builder
+                    .build_load(elem_llvm_ty, elem_ptr, "arr_elem")
+                    .unwrap();
+                Ok(val)
+            }
+            Expr::IndexAssignment { name, index, value } => {
+                let (ptr, ty, size) = match self.arrays.get(name) {
+                    Some(&(ptr, ty, size)) => (ptr, ty, size),
+                    None => return Err(CodegenError(format!("Undefined array: {}", name))),
+                };
+                let val = self.generate_expr(value)?;
+                let idx_val = self.generate_expr(index)?;
+                let idx_int = if idx_val.get_type().is_int_type() {
+                    idx_val.into_int_value()
+                } else {
+                    return Err(CodegenError("Array index must be an integer".to_string()));
+                };
+                let elem_llvm_ty = self.llvm_type(ty);
+                let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
+                let zero = self.context.i64_type().const_zero();
+                let elem_ptr = unsafe {
+                    self.builder
+                        .build_in_bounds_gep(arr_llvm_ty, ptr, &[zero, idx_int], "arr_idx")
+                        .unwrap()
+                };
+                self.builder.build_store(elem_ptr, val).unwrap();
+                Ok(val)
             }
         }
     }
