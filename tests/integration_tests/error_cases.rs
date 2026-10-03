@@ -178,4 +178,3 @@ fn test_syntax_error_missing_semicolon_fails() {
 
     assert!(compile_source(source).is_err());
 }
-
