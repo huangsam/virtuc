@@ -38,8 +38,8 @@ pub struct CodeGenerator<'ctx> {
     builder: Builder<'ctx>,
     /// Variable environment: name -> (pointer to value, type)
     variables: HashMap<String, (PointerValue<'ctx>, Type)>,
-    /// Array environment: name -> (pointer to array, element type, size)
-    arrays: HashMap<String, (PointerValue<'ctx>, Type, usize)>,
+    /// Array environment: name -> (pointer to array, element type, dims)
+    arrays: HashMap<String, (PointerValue<'ctx>, Type, Vec<usize>)>,
     /// Function return types
     function_return_types: HashMap<String, Type>,
     /// Stack of loops: (break_target, continue_target)
@@ -162,18 +162,26 @@ impl<'ctx> CodeGenerator<'ctx> {
             Expr::LogicalAnd { .. } | Expr::LogicalOr { .. } => Some(Type::Int),
             Expr::Call { name, .. } => self.function_return_types.get(name).cloned(),
             Expr::Assignment { name, .. } => self.variables.get(name).map(|(_, ty)| ty.clone()),
-            Expr::Index { name, .. } => {
-                if let Some((_, ty, _)) = self.arrays.get(name) {
-                    Some(ty.clone())
+            Expr::Index { name, indices } => {
+                if let Some((_, ty, dims)) = self.arrays.get(name) {
+                    if indices.len() < dims.len() {
+                        Some(Type::Pointer(Box::new(ty.clone())))
+                    } else {
+                        Some(ty.clone())
+                    }
                 } else if let Some((_, Type::Pointer(elem_ty))) = self.variables.get(name) {
                     Some(*elem_ty.clone())
                 } else {
                     None
                 }
             }
-            Expr::IndexAssignment { name, .. } => {
-                if let Some((_, ty, _)) = self.arrays.get(name) {
-                    Some(ty.clone())
+            Expr::IndexAssignment { name, indices, .. } => {
+                if let Some((_, ty, dims)) = self.arrays.get(name) {
+                    if indices.len() < dims.len() {
+                        Some(Type::Pointer(Box::new(ty.clone())))
+                    } else {
+                        Some(ty.clone())
+                    }
                 } else if let Some((_, Type::Pointer(elem_ty))) = self.variables.get(name) {
                     Some(*elem_ty.clone())
                 } else {
@@ -317,12 +325,11 @@ impl<'ctx> CodeGenerator<'ctx> {
                     self.builder.build_store(alloca, value).unwrap();
                 }
             }
-            Stmt::ArrayDeclaration { ty, name, size } => {
-                let elem_llvm_ty = self.llvm_type(ty);
-                let arr_llvm_ty = elem_llvm_ty.array_type(*size as u32);
+            Stmt::ArrayDeclaration { ty, name, dims } => {
+                let arr_llvm_ty = self.llvm_array_type(ty, dims);
                 let alloca = self.builder.build_alloca(arr_llvm_ty, name).unwrap();
                 self.arrays
-                    .insert(name.clone(), (alloca, ty.clone(), *size));
+                    .insert(name.clone(), (alloca, ty.clone(), dims.clone()));
             }
             Stmt::Return(expr) => {
                 if let Some(e) = expr {
@@ -576,13 +583,12 @@ impl<'ctx> CodeGenerator<'ctx> {
                         .builder
                         .build_load(self.llvm_type(ty), *ptr, name)
                         .unwrap())
-                } else if let Some(&(ptr, ref ty, size)) = self.arrays.get(name) {
-                    let elem_llvm_ty = self.llvm_type(ty);
-                    let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
-                    let zero = self.context.i64_type().const_zero();
+                } else if let Some(&(ptr, ref ty, ref dims)) = self.arrays.get(name) {
+                    let arr_llvm_ty = self.llvm_array_type(ty, dims);
+                    let zeros = vec![self.context.i64_type().const_zero(); dims.len() + 1];
                     let elem_ptr = unsafe {
                         self.builder
-                            .build_in_bounds_gep(arr_llvm_ty, ptr, &[zero, zero], "decay")
+                            .build_in_bounds_gep(arr_llvm_ty, ptr, &zeros, "decay")
                             .unwrap()
                     };
                     Ok(elem_ptr.into())
@@ -631,18 +637,12 @@ impl<'ctx> CodeGenerator<'ctx> {
                     Expr::Identifier(name) => {
                         if let Some((ptr, _)) = self.variables.get(name) {
                             Ok((*ptr).into())
-                        } else if let Some(&(ptr, ref ty, size)) = self.arrays.get(name) {
-                            let elem_llvm_ty = self.llvm_type(ty);
-                            let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
-                            let zero = self.context.i64_type().const_zero();
+                        } else if let Some(&(ptr, ref ty, ref dims)) = self.arrays.get(name) {
+                            let arr_llvm_ty = self.llvm_array_type(ty, dims);
+                            let zeros = vec![self.context.i64_type().const_zero(); dims.len() + 1];
                             let elem_ptr = unsafe {
                                 self.builder
-                                    .build_in_bounds_gep(
-                                        arr_llvm_ty,
-                                        ptr,
-                                        &[zero, zero],
-                                        "arr_decay",
-                                    )
+                                    .build_in_bounds_gep(arr_llvm_ty, ptr, &zeros, "arr_decay")
                                     .unwrap()
                             };
                             Ok(elem_ptr.into())
@@ -650,26 +650,32 @@ impl<'ctx> CodeGenerator<'ctx> {
                             Err(CodegenError(format!("Undefined variable for & : {}", name)))
                         }
                     }
-                    Expr::Index { name, index } => {
-                        let idx_val = self.generate_expr(index)?;
-                        let idx_int = idx_val.into_int_value();
-                        if let Some(&(ptr, ref ty, size)) = self.arrays.get(name) {
-                            let elem_llvm_ty = self.llvm_type(ty);
-                            let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
-                            let zero = self.context.i64_type().const_zero();
+                    Expr::Index { name, indices } => {
+                        let mut idx_ints = Vec::with_capacity(indices.len());
+                        for idx in indices {
+                            let idx_val = self.generate_expr(idx)?;
+                            idx_ints.push(idx_val.into_int_value());
+                        }
+                        if let Some(&(ptr, ref ty, ref dims)) = self.arrays.get(name) {
+                            let arr_llvm_ty = self.llvm_array_type(ty, dims);
+                            let mut gep_indices = vec![self.context.i64_type().const_zero()];
+                            gep_indices.extend(idx_ints);
+                            while gep_indices.len() < dims.len() + 1 {
+                                gep_indices.push(self.context.i64_type().const_zero());
+                            }
                             let elem_ptr = unsafe {
                                 self.builder
-                                    .build_in_bounds_gep(
-                                        arr_llvm_ty,
-                                        ptr,
-                                        &[zero, idx_int],
-                                        "arr_idx",
-                                    )
+                                    .build_in_bounds_gep(arr_llvm_ty, ptr, &gep_indices, "arr_idx")
                                     .unwrap()
                             };
                             Ok(elem_ptr.into())
                         } else if let Some(&(ptr, ref var_ty)) = self.variables.get(name) {
                             if let Type::Pointer(elem_ty) = var_ty {
+                                if idx_ints.len() != 1 {
+                                    return Err(CodegenError(
+                                        "Cannot index pointer with multiple indices".to_string(),
+                                    ));
+                                }
                                 let elem_llvm_ty = self.llvm_type(elem_ty);
                                 let base_ptr = self
                                     .builder
@@ -681,7 +687,7 @@ impl<'ctx> CodeGenerator<'ctx> {
                                         .build_in_bounds_gep(
                                             elem_llvm_ty,
                                             base_ptr,
-                                            &[idx_int],
+                                            &[idx_ints[0]],
                                             "ptr_idx",
                                         )
                                         .unwrap()
@@ -1261,29 +1267,50 @@ impl<'ctx> CodeGenerator<'ctx> {
                     Err(CodegenError(format!("Undefined variable: {}", name)))
                 }
             }
-            Expr::Index { name, index } => {
-                let idx_val = self.generate_expr(index)?;
-                let idx_int = if idx_val.get_type().is_int_type() {
-                    idx_val.into_int_value()
-                } else {
-                    return Err(CodegenError("Array index must be an integer".to_string()));
-                };
-                if let Some(&(ptr, ref ty, size)) = self.arrays.get(name) {
-                    let elem_llvm_ty = self.llvm_type(ty);
-                    let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
-                    let zero = self.context.i64_type().const_zero();
-                    let elem_ptr = unsafe {
-                        self.builder
-                            .build_in_bounds_gep(arr_llvm_ty, ptr, &[zero, idx_int], "arr_idx")
-                            .unwrap()
-                    };
-                    let val = self
-                        .builder
-                        .build_load(elem_llvm_ty, elem_ptr, "arr_elem")
-                        .unwrap();
-                    Ok(val)
+            Expr::Index { name, indices } => {
+                let mut idx_ints = Vec::with_capacity(indices.len());
+                for idx in indices {
+                    let idx_val = self.generate_expr(idx)?;
+                    if idx_val.get_type().is_int_type() {
+                        idx_ints.push(idx_val.into_int_value());
+                    } else {
+                        return Err(CodegenError("Array index must be an integer".to_string()));
+                    }
+                }
+                if let Some(&(ptr, ref ty, ref dims)) = self.arrays.get(name) {
+                    let arr_llvm_ty = self.llvm_array_type(ty, dims);
+                    let mut gep_indices = vec![self.context.i64_type().const_zero()];
+                    gep_indices.extend(idx_ints);
+                    if gep_indices.len() < dims.len() + 1 {
+                        while gep_indices.len() < dims.len() + 1 {
+                            gep_indices.push(self.context.i64_type().const_zero());
+                        }
+                        let elem_ptr = unsafe {
+                            self.builder
+                                .build_in_bounds_gep(arr_llvm_ty, ptr, &gep_indices, "arr_row")
+                                .unwrap()
+                        };
+                        Ok(elem_ptr.into())
+                    } else {
+                        let elem_llvm_ty = self.llvm_type(ty);
+                        let elem_ptr = unsafe {
+                            self.builder
+                                .build_in_bounds_gep(arr_llvm_ty, ptr, &gep_indices, "arr_idx")
+                                .unwrap()
+                        };
+                        let val = self
+                            .builder
+                            .build_load(elem_llvm_ty, elem_ptr, "arr_elem")
+                            .unwrap();
+                        Ok(val)
+                    }
                 } else if let Some(&(ptr, ref var_ty)) = self.variables.get(name) {
                     if let Type::Pointer(elem_ty) = var_ty {
+                        if idx_ints.len() != 1 {
+                            return Err(CodegenError(
+                                "Cannot index pointer with multiple indices".to_string(),
+                            ));
+                        }
                         let elem_llvm_ty = self.llvm_type(elem_ty);
                         let base_ptr = self
                             .builder
@@ -1292,7 +1319,12 @@ impl<'ctx> CodeGenerator<'ctx> {
                             .into_pointer_value();
                         let elem_ptr = unsafe {
                             self.builder
-                                .build_in_bounds_gep(elem_llvm_ty, base_ptr, &[idx_int], "ptr_idx")
+                                .build_in_bounds_gep(
+                                    elem_llvm_ty,
+                                    base_ptr,
+                                    &[idx_ints[0]],
+                                    "ptr_idx",
+                                )
                                 .unwrap()
                         };
                         let val = self
@@ -1313,27 +1345,39 @@ impl<'ctx> CodeGenerator<'ctx> {
                     )))
                 }
             }
-            Expr::IndexAssignment { name, index, value } => {
+            Expr::IndexAssignment {
+                name,
+                indices,
+                value,
+            } => {
                 let val = self.generate_expr(value)?;
-                let idx_val = self.generate_expr(index)?;
-                let idx_int = if idx_val.get_type().is_int_type() {
-                    idx_val.into_int_value()
-                } else {
-                    return Err(CodegenError("Array index must be an integer".to_string()));
-                };
-                if let Some(&(ptr, ref ty, size)) = self.arrays.get(name) {
-                    let elem_llvm_ty = self.llvm_type(ty);
-                    let arr_llvm_ty = elem_llvm_ty.array_type(size as u32);
-                    let zero = self.context.i64_type().const_zero();
+                let mut idx_ints = Vec::with_capacity(indices.len());
+                for idx in indices {
+                    let idx_val = self.generate_expr(idx)?;
+                    if idx_val.get_type().is_int_type() {
+                        idx_ints.push(idx_val.into_int_value());
+                    } else {
+                        return Err(CodegenError("Array index must be an integer".to_string()));
+                    }
+                }
+                if let Some(&(ptr, ref ty, ref dims)) = self.arrays.get(name) {
+                    let arr_llvm_ty = self.llvm_array_type(ty, dims);
+                    let mut gep_indices = vec![self.context.i64_type().const_zero()];
+                    gep_indices.extend(idx_ints);
                     let elem_ptr = unsafe {
                         self.builder
-                            .build_in_bounds_gep(arr_llvm_ty, ptr, &[zero, idx_int], "arr_idx")
+                            .build_in_bounds_gep(arr_llvm_ty, ptr, &gep_indices, "arr_idx")
                             .unwrap()
                     };
                     self.builder.build_store(elem_ptr, val).unwrap();
                     Ok(val)
                 } else if let Some(&(ptr, ref var_ty)) = self.variables.get(name) {
                     if let Type::Pointer(elem_ty) = var_ty {
+                        if idx_ints.len() != 1 {
+                            return Err(CodegenError(
+                                "Cannot index pointer with multiple indices".to_string(),
+                            ));
+                        }
                         let elem_llvm_ty = self.llvm_type(elem_ty);
                         let base_ptr = self
                             .builder
@@ -1342,7 +1386,12 @@ impl<'ctx> CodeGenerator<'ctx> {
                             .into_pointer_value();
                         let elem_ptr = unsafe {
                             self.builder
-                                .build_in_bounds_gep(elem_llvm_ty, base_ptr, &[idx_int], "ptr_idx")
+                                .build_in_bounds_gep(
+                                    elem_llvm_ty,
+                                    base_ptr,
+                                    &[idx_ints[0]],
+                                    "ptr_idx",
+                                )
                                 .unwrap()
                         };
                         self.builder.build_store(elem_ptr, val).unwrap();
@@ -1393,6 +1442,16 @@ impl<'ctx> CodeGenerator<'ctx> {
         } else {
             panic!("Non-numeric value cannot be converted to bool")
         }
+    }
+
+    /// Creates an LLVM ArrayType for multi-dimensional fixed-size arrays.
+    fn llvm_array_type(&self, ty: &Type, dims: &[usize]) -> inkwell::types::ArrayType<'ctx> {
+        assert!(!dims.is_empty());
+        let mut current_arr = self.llvm_type(ty).array_type(*dims.last().unwrap() as u32);
+        for &dim in dims[..dims.len() - 1].iter().rev() {
+            current_arr = current_arr.array_type(dim as u32);
+        }
+        current_arr
     }
 
     /// Maps C type to LLVM type.

@@ -26,3 +26,12 @@ fn test_binary_search() {
     assert_eq!(res.exit_code, Some(42));
     assert!(res.stdout.contains("found=5 missing=-1"));
 }
+
+#[test]
+fn test_matrix_multiplication() {
+    let source = include_str!("../fixtures/matrix_mul.c");
+    let res = run_source(source);
+
+    assert_eq!(res.exit_code, Some(42));
+    assert!(res.stdout.contains("C = [[31, 19], [85, 55]]"));
+}

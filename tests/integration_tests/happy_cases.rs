@@ -324,6 +324,79 @@ fn test_1d_arrays() {
 }
 
 #[test]
+fn test_2d_arrays() {
+    let source = r#"
+        #include <stdio.h>
+
+        int main() {
+            int grid[3][4];
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 4; j++) {
+                    grid[i][j] = i * 4 + j + 1;
+                }
+            }
+
+            // grid elements are 1..12
+            // sum of 1..12 = 78
+            grid[1][2] += 10; // +10 -> 88
+            grid[2][3]++;    // +1  -> 89
+
+            int* p = &grid[0][1];
+            *p = 100; // was 2, now 100 -> +98 -> 187
+
+            int sum = 0;
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 4; j++) {
+                    sum += grid[i][j];
+                }
+            }
+
+            printf("sum=%d\n", sum);
+            return sum;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(187));
+    assert!(res.stdout.contains("sum=187"));
+}
+
+#[test]
+fn test_2d_array_row_pointer() {
+    let source = r#"
+        #include <stdio.h>
+
+        int sum_row(int* row, int len) {
+            int total = 0;
+            for (int i = 0; i < len; i++) {
+                total += row[i];
+            }
+            return total;
+        }
+
+        int main() {
+            int table[2][3];
+            table[0][0] = 10;
+            table[0][1] = 20;
+            table[0][2] = 30;
+            table[1][0] = 40;
+            table[1][1] = 50;
+            table[1][2] = 60;
+
+            int r0 = sum_row(table[0], 3);
+            int r1 = sum_row(table[1], 3);
+
+            printf("r0=%d r1=%d\n", r0, r1);
+            return r0 + r1;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(210));
+    assert!(res.stdout.contains("r0=60 r1=150"));
+}
+
+#[test]
 fn test_pointers_and_references() {
     let source = include_str!("../fixtures/pointers.c");
     let res = run_source(source);

@@ -103,12 +103,12 @@ pub enum Expr {
     LogicalAnd { left: Box<Expr>, right: Box<Expr> },
     /// Short-circuiting logical OR (||)
     LogicalOr { left: Box<Expr>, right: Box<Expr> },
-    /// Array indexing access: `identifier[index]`
-    Index { name: String, index: Box<Expr> },
-    /// Array indexing assignment: `identifier[index] = value`
+    /// Array indexing access: `identifier[index]` or `identifier[i][j]...`
+    Index { name: String, indices: Vec<Expr> },
+    /// Array indexing assignment: `identifier[index] = value` or `identifier[i][j]... = value`
     IndexAssignment {
         name: String,
-        index: Box<Expr>,
+        indices: Vec<Expr>,
         value: Box<Expr>,
     },
     /// Pointer dereference assignment: `*target = value`
@@ -128,8 +128,12 @@ pub enum Stmt {
         name: String,
         init: Option<Expr>,
     },
-    /// Fixed-size array declaration: `type name[size];`
-    ArrayDeclaration { ty: Type, name: String, size: usize },
+    /// Fixed-size array declaration: `type name[size];` or `type name[d1][d2]...;`
+    ArrayDeclaration {
+        ty: Type,
+        name: String,
+        dims: Vec<usize>,
+    },
     /// Return statement
     Return(Option<Expr>),
     /// Block of statements

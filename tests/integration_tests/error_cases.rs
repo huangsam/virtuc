@@ -144,6 +144,44 @@ fn test_zero_sized_array_fails() {
 }
 
 #[test]
+fn test_zero_sized_2d_array_fails() {
+    let source = r#"
+        int main() {
+            int arr[3][0];
+            return 0;
+        }
+    "#;
+
+    assert!(compile_source(source).is_err());
+}
+
+#[test]
+fn test_2d_array_too_many_indices_fails() {
+    let source = r#"
+        int main() {
+            int arr[2][2];
+            int x = arr[0][1][2];
+            return x;
+        }
+    "#;
+
+    assert!(compile_source(source).is_err());
+}
+
+#[test]
+fn test_2d_array_type_mismatch_assignment_fails() {
+    let source = r#"
+        int main() {
+            int arr[2][2];
+            arr[0][0] = 3.14;
+            return 0;
+        }
+    "#;
+
+    assert!(compile_source(source).is_err());
+}
+
+#[test]
 fn test_calling_undefined_function_fails() {
     let source = r#"
         int main() {

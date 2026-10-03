@@ -26,8 +26,8 @@ pub struct SemanticAnalyzer {
     functions: HashMap<String, (Type, Vec<Type>, bool)>,
     /// Stack of scopes for variables: each scope is name -> type
     scopes: Vec<HashMap<String, Type>>,
-    /// Stack of scopes for arrays: each scope is name -> (element type, size)
-    array_scopes: Vec<HashMap<String, (Type, usize)>>,
+    /// Stack of scopes for arrays: each scope is name -> (element type, dims)
+    array_scopes: Vec<HashMap<String, (Type, Vec<usize>)>>,
     /// Current function's expected return type (during analysis)
     current_return_type: Option<Type>,
     /// Loop nesting depth
@@ -166,13 +166,13 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            Stmt::ArrayDeclaration { ty, name, size } => {
+            Stmt::ArrayDeclaration { ty, name, dims } => {
                 if *ty == Type::Void {
                     self.errors.push(SemanticError::TypeMismatch(
                         "Array element cannot have void type".to_string(),
                     ));
                 }
-                if *size == 0 {
+                if dims.is_empty() || dims.contains(&0) {
                     self.errors.push(SemanticError::TypeMismatch(
                         "Array size must be greater than zero".to_string(),
                     ));
@@ -186,7 +186,7 @@ impl SemanticAnalyzer {
                     self.array_scopes
                         .last_mut()
                         .unwrap()
-                        .insert(name.clone(), (ty.clone(), *size));
+                        .insert(name.clone(), (ty.clone(), dims.clone()));
                 }
             }
             Stmt::Return(expr) => {
@@ -355,17 +355,38 @@ impl SemanticAnalyzer {
                             None
                         }
                     }
-                    Expr::Index { name, index } => {
-                        let idx_ty = self.check_expr(index);
-                        if idx_ty != Some(Type::Int) {
-                            self.errors.push(SemanticError::TypeMismatch(
-                                "Array index must be an integer".to_string(),
-                            ));
+                    Expr::Index { name, indices } => {
+                        for index in indices {
+                            let idx_ty = self.check_expr(index);
+                            if idx_ty != Some(Type::Int) {
+                                self.errors.push(SemanticError::TypeMismatch(
+                                    "Array index must be an integer".to_string(),
+                                ));
+                            }
                         }
-                        if let Some((elem_ty, _)) = self.lookup_array(name) {
-                            Some(Type::Pointer(Box::new(elem_ty)))
+                        if let Some((elem_ty, dims)) = self.lookup_array(name) {
+                            if indices.len() > dims.len() {
+                                self.errors.push(SemanticError::TypeMismatch(format!(
+                                    "Too many indices for array '{}': expected at most {}, got {}",
+                                    name,
+                                    dims.len(),
+                                    indices.len()
+                                )));
+                                None
+                            } else {
+                                Some(Type::Pointer(Box::new(elem_ty)))
+                            }
                         } else if let Some(Type::Pointer(elem_ty)) = self.lookup_variable(name) {
-                            Some(Type::Pointer(elem_ty))
+                            if indices.len() != 1 {
+                                self.errors.push(SemanticError::TypeMismatch(format!(
+                                    "Cannot index pointer '{}' with {} indices",
+                                    name,
+                                    indices.len()
+                                )));
+                                None
+                            } else {
+                                Some(Type::Pointer(elem_ty))
+                            }
                         } else {
                             self.errors
                                 .push(SemanticError::UndefinedVariable(name.clone()));
@@ -541,33 +562,69 @@ impl SemanticAnalyzer {
                     None
                 }
             }
-            Expr::Index { name, index } => {
-                let idx_ty = self.check_expr(index);
-                if idx_ty != Some(Type::Int) {
-                    self.errors.push(SemanticError::TypeMismatch(
-                        "Array index must be an integer".to_string(),
-                    ));
+            Expr::Index { name, indices } => {
+                for index in indices {
+                    let idx_ty = self.check_expr(index);
+                    if idx_ty != Some(Type::Int) {
+                        self.errors.push(SemanticError::TypeMismatch(
+                            "Array index must be an integer".to_string(),
+                        ));
+                    }
                 }
-                if let Some((elem_ty, _)) = self.lookup_array(name) {
-                    Some(elem_ty)
+                if let Some((elem_ty, dims)) = self.lookup_array(name) {
+                    if indices.len() > dims.len() {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Too many indices for array '{}': expected at most {}, got {}",
+                            name,
+                            dims.len(),
+                            indices.len()
+                        )));
+                        None
+                    } else if indices.len() < dims.len() {
+                        Some(Type::Pointer(Box::new(elem_ty)))
+                    } else {
+                        Some(elem_ty)
+                    }
                 } else if let Some(Type::Pointer(elem_ty)) = self.lookup_variable(name) {
-                    Some(*elem_ty)
+                    if indices.len() != 1 {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Cannot index pointer '{}' with {} indices",
+                            name,
+                            indices.len()
+                        )));
+                        None
+                    } else {
+                        Some(*elem_ty)
+                    }
                 } else {
                     self.errors
                         .push(SemanticError::UndefinedVariable(name.clone()));
                     None
                 }
             }
-            Expr::IndexAssignment { name, index, value } => {
-                let idx_ty = self.check_expr(index);
-                if idx_ty != Some(Type::Int) {
-                    self.errors.push(SemanticError::TypeMismatch(
-                        "Array index must be an integer".to_string(),
-                    ));
+            Expr::IndexAssignment {
+                name,
+                indices,
+                value,
+            } => {
+                for index in indices {
+                    let idx_ty = self.check_expr(index);
+                    if idx_ty != Some(Type::Int) {
+                        self.errors.push(SemanticError::TypeMismatch(
+                            "Array index must be an integer".to_string(),
+                        ));
+                    }
                 }
                 let val_ty = self.check_expr(value);
-                if let Some((elem_ty, _)) = self.lookup_array(name) {
-                    if val_ty.as_ref() != Some(&elem_ty) {
+                if let Some((elem_ty, dims)) = self.lookup_array(name) {
+                    if indices.len() != dims.len() {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Invalid number of indices for array assignment to '{}': expected {}, got {}",
+                            name,
+                            dims.len(),
+                            indices.len()
+                        )));
+                    } else if val_ty.as_ref() != Some(&elem_ty) {
                         self.errors.push(SemanticError::TypeMismatch(format!(
                             "Cannot assign {:?} to array element of type {:?}",
                             val_ty, elem_ty
@@ -575,7 +632,13 @@ impl SemanticAnalyzer {
                     }
                     Some(elem_ty)
                 } else if let Some(Type::Pointer(elem_ty)) = self.lookup_variable(name) {
-                    if val_ty.as_ref() != Some(&*elem_ty) {
+                    if indices.len() != 1 {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Cannot index pointer '{}' with {} indices",
+                            name,
+                            indices.len()
+                        )));
+                    } else if val_ty.as_ref() != Some(&*elem_ty) {
                         self.errors.push(SemanticError::TypeMismatch(format!(
                             "Cannot assign {:?} to pointer element of type {:?}",
                             val_ty, elem_ty
@@ -620,7 +683,7 @@ impl SemanticAnalyzer {
     }
 
     /// Looks up an array in the current scopes.
-    fn lookup_array(&self, name: &str) -> Option<(Type, usize)> {
+    fn lookup_array(&self, name: &str) -> Option<(Type, Vec<usize>)> {
         for scope in self.array_scopes.iter().rev() {
             if let Some(info) = scope.get(name) {
                 return Some(info.clone());
