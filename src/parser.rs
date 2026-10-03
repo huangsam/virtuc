@@ -283,6 +283,44 @@ fn parse_comparison(input: &[Token]) -> IResult<&[Token], Expr> {
     Ok((input, expr))
 }
 
+/// Parse logical AND expression: comparison (&& comparison)*
+fn parse_logical_and(input: &[Token]) -> IResult<&[Token], Expr> {
+    let (input, mut expr) = parse_comparison(input)?;
+    let mut input = input;
+    loop {
+        let result = opt(tuple((token(Token::LogicalAnd), parse_comparison)))(input)?;
+        if let Some((_, right)) = result.1 {
+            expr = Expr::LogicalAnd {
+                left: Box::new(expr),
+                right: Box::new(right),
+            };
+            input = result.0;
+        } else {
+            break;
+        }
+    }
+    Ok((input, expr))
+}
+
+/// Parse logical OR expression: logical_and (|| logical_and)*
+fn parse_logical_or(input: &[Token]) -> IResult<&[Token], Expr> {
+    let (input, mut expr) = parse_logical_and(input)?;
+    let mut input = input;
+    loop {
+        let result = opt(tuple((token(Token::LogicalOr), parse_logical_and)))(input)?;
+        if let Some((_, right)) = result.1 {
+            expr = Expr::LogicalOr {
+                left: Box::new(expr),
+                right: Box::new(right),
+            };
+            input = result.0;
+        } else {
+            break;
+        }
+    }
+    Ok((input, expr))
+}
+
 /// Parse an assignment expression: identifier (=|+=|-=|*=|/=|%=) expr
 fn parse_assignment_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
@@ -324,7 +362,7 @@ fn parse_assignment_expr(input: &[Token]) -> IResult<&[Token], Expr> {
                 }
             },
         ),
-        parse_comparison,
+        parse_logical_or,
     ))(input)
 }
 

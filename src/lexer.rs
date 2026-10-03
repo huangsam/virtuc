@@ -193,6 +193,14 @@ pub enum Token {
     #[token("%=")]
     ModuloAssign,
 
+    /// Logical AND operator
+    #[token("&&")]
+    LogicalAnd,
+
+    /// Logical OR operator
+    #[token("||")]
+    LogicalOr,
+
     /// Semicolon
     #[token(";")]
     Semicolon,

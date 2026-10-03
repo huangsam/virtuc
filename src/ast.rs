@@ -96,6 +96,16 @@ pub enum Expr {
         op: BinOp,
         right: Box<Expr>,
     },
+    /// Short-circuiting logical AND (&&)
+    LogicalAnd {
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+    /// Short-circuiting logical OR (||)
+    LogicalOr {
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
     /// Function call
     Call { name: String, args: Vec<Expr> },
     /// Assignment expression

@@ -302,6 +302,20 @@ impl SemanticAnalyzer {
                     }
                 }
             }
+            Expr::LogicalAnd { left, right } | Expr::LogicalOr { left, right } => {
+                let left_ty = self.check_expr(left);
+                let right_ty = self.check_expr(right);
+                if (left_ty == Some(Type::Int) || left_ty == Some(Type::Float))
+                    && (right_ty == Some(Type::Int) || right_ty == Some(Type::Float))
+                {
+                    Some(Type::Int)
+                } else {
+                    self.errors.push(SemanticError::TypeMismatch(
+                        "Logical operator operands must be numeric".to_string(),
+                    ));
+                    None
+                }
+            }
             Expr::Binary { left, op, right } => {
                 let left_ty = self.check_expr(left);
                 let right_ty = self.check_expr(right);

@@ -516,6 +516,98 @@ impl<'ctx> CodeGenerator<'ctx> {
                     }
                 }
             }
+            Expr::LogicalAnd { left, right } => {
+                let current_fn = self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_parent()
+                    .unwrap();
+
+                let lhs_val = self.generate_expr(left)?;
+                let lhs_block = self.builder.get_insert_block().unwrap();
+                let lhs_bool = self.to_bool(lhs_val, "land.lhs.bool");
+
+                let rhs_block = self.context.append_basic_block(current_fn, "land.rhs");
+                let merge_block = self.context.append_basic_block(current_fn, "land.merge");
+
+                self.builder
+                    .build_conditional_branch(lhs_bool, rhs_block, merge_block)
+                    .unwrap();
+
+                // RHS block
+                self.builder.position_at_end(rhs_block);
+                let rhs_val = self.generate_expr(right)?;
+                let rhs_eval_block = self.builder.get_insert_block().unwrap();
+                let rhs_bool = self.to_bool(rhs_val, "land.rhs.bool");
+                self.builder.build_unconditional_branch(merge_block).unwrap();
+
+                // Merge block
+                self.builder.position_at_end(merge_block);
+                let phi = self
+                    .builder
+                    .build_phi(self.context.bool_type(), "land.res")
+                    .unwrap();
+                phi.add_incoming(&[
+                    (&self.context.bool_type().const_zero(), lhs_block),
+                    (&rhs_bool, rhs_eval_block),
+                ]);
+                let res_i64 = self
+                    .builder
+                    .build_int_z_extend(
+                        phi.as_basic_value().into_int_value(),
+                        self.context.i64_type(),
+                        "land.ext",
+                    )
+                    .unwrap();
+                Ok(res_i64.into())
+            }
+            Expr::LogicalOr { left, right } => {
+                let current_fn = self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_parent()
+                    .unwrap();
+
+                let lhs_val = self.generate_expr(left)?;
+                let lhs_block = self.builder.get_insert_block().unwrap();
+                let lhs_bool = self.to_bool(lhs_val, "lor.lhs.bool");
+
+                let rhs_block = self.context.append_basic_block(current_fn, "lor.rhs");
+                let merge_block = self.context.append_basic_block(current_fn, "lor.merge");
+
+                self.builder
+                    .build_conditional_branch(lhs_bool, merge_block, rhs_block)
+                    .unwrap();
+
+                // RHS block
+                self.builder.position_at_end(rhs_block);
+                let rhs_val = self.generate_expr(right)?;
+                let rhs_eval_block = self.builder.get_insert_block().unwrap();
+                let rhs_bool = self.to_bool(rhs_val, "lor.rhs.bool");
+                self.builder.build_unconditional_branch(merge_block).unwrap();
+
+                // Merge block
+                self.builder.position_at_end(merge_block);
+                let phi = self
+                    .builder
+                    .build_phi(self.context.bool_type(), "lor.res")
+                    .unwrap();
+                phi.add_incoming(&[
+                    (&self.context.bool_type().const_int(1, false), lhs_block),
+                    (&rhs_bool, rhs_eval_block),
+                ]);
+                let res_i64 = self
+                    .builder
+                    .build_int_z_extend(
+                        phi.as_basic_value().into_int_value(),
+                        self.context.i64_type(),
+                        "lor.ext",
+                    )
+                    .unwrap();
+                Ok(res_i64.into())
+            }
             Expr::Binary { left, op, right } => {
                 let left_val = self.generate_expr(left)?;
                 let right_val = self.generate_expr(right)?;
@@ -854,6 +946,31 @@ impl<'ctx> CodeGenerator<'ctx> {
                     Err(CodegenError(format!("Undefined variable: {}", name)))
                 }
             }
+        }
+    }
+
+    /// Converts a basic value to an i1 boolean.
+    fn to_bool(&self, val: BasicValueEnum<'ctx>, name: &str) -> inkwell::values::IntValue<'ctx> {
+        if val.get_type().is_int_type() {
+            self.builder
+                .build_int_compare(
+                    IntPredicate::NE,
+                    val.into_int_value(),
+                    self.context.i64_type().const_zero(),
+                    name,
+                )
+                .unwrap()
+        } else if val.get_type().is_float_type() {
+            self.builder
+                .build_float_compare(
+                    FloatPredicate::ONE,
+                    val.into_float_value(),
+                    self.context.f64_type().const_zero(),
+                    name,
+                )
+                .unwrap()
+        } else {
+            panic!("Non-numeric value cannot be converted to bool")
         }
     }
 

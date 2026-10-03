@@ -536,3 +536,42 @@ fn test_break_and_continue() {
 
     assert_eq!(status.code(), Some(42));
 }
+
+#[test]
+fn test_short_circuit_logical_operators() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_logical");
+
+    let source = r#"
+        int main() {
+            int zero = 0;
+            int one = 1;
+
+            // Test short-circuit in &&: if not short-circuited, 10 / 0 would trap
+            int and_res = 0;
+            if (zero != 0 && (10 / zero) > 1) {
+                and_res = 999;
+            } else {
+                and_res = 20;
+            }
+
+            // Test short-circuit in ||: if not short-circuited, 10 / (1 - 1) would trap
+            int or_res = 0;
+            if (one == 1 || (10 / (one - 1)) > 1) {
+                or_res = 22;
+            } else {
+                or_res = 999;
+            }
+
+            // 20 + 22 = 42
+            return and_res + or_res;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let status = Command::new(&output_path)
+        .status()
+        .expect("failed to run generated executable");
+
+    assert_eq!(status.code(), Some(42));
+}
