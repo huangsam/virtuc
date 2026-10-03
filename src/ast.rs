@@ -126,6 +126,11 @@ pub enum Stmt {
         update: Option<Expr>,
         body: Box<Stmt>,
     },
+    /// While loop
+    While {
+        cond: Expr,
+        body: Box<Stmt>,
+    },
     /// Expression statement (for function calls, etc.)
     Expr(Expr),
 }

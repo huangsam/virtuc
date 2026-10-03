@@ -371,6 +371,55 @@ impl<'ctx> CodeGenerator<'ctx> {
                 // Step 7: Continue code generation after the loop
                 self.builder.position_at_end(after_loop);
             }
+            Stmt::While { cond, body } => {
+                let current_fn = self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_parent()
+                    .unwrap();
+
+                let cond_block = self.context.append_basic_block(current_fn, "while.cond");
+                let body_block = self.context.append_basic_block(current_fn, "while.body");
+                let after_loop = self.context.append_basic_block(current_fn, "while.end");
+
+                self.builder.build_unconditional_branch(cond_block).unwrap();
+
+                // Condition block
+                self.builder.position_at_end(cond_block);
+                let cond_val = self.generate_expr(cond)?;
+                let cond_bool = if cond_val.get_type().is_int_type() {
+                    self.builder
+                        .build_int_compare(
+                            IntPredicate::NE,
+                            cond_val.into_int_value(),
+                            self.context.i64_type().const_zero(),
+                            "while.cond.bool",
+                        )
+                        .unwrap()
+                } else {
+                    return Err(CodegenError("While condition must be integer".to_string()));
+                };
+                self.builder
+                    .build_conditional_branch(cond_bool, body_block, after_loop)
+                    .unwrap();
+
+                // Body block
+                self.builder.position_at_end(body_block);
+                self.generate_stmt(body)?;
+                if self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_terminator()
+                    .is_none()
+                {
+                    self.builder.build_unconditional_branch(cond_block).unwrap();
+                }
+
+                // After loop block
+                self.builder.position_at_end(after_loop);
+            }
             Stmt::Expr(expr) => {
                 self.generate_expr(expr)?;
             }

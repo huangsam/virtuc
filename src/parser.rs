@@ -342,6 +342,21 @@ fn parse_for(input: &[Token]) -> IResult<&[Token], Stmt> {
     )(input)
 }
 
+/// Parse a while loop: while (expr) stmt
+fn parse_while(input: &[Token]) -> IResult<&[Token], Stmt> {
+    map(
+        tuple((
+            token(Token::While),
+            delimited(token(Token::LParen), parse_expr, token(Token::RParen)),
+            parse_stmt,
+        )),
+        |(_, cond, body)| Stmt::While {
+            cond,
+            body: Box::new(body),
+        },
+    )(input)
+}
+
 /// Parse an expression statement: expr ;
 fn parse_expr_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
     map(terminated(parse_expr, token(Token::Semicolon)), Stmt::Expr)(input)
@@ -354,6 +369,7 @@ fn parse_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
         parse_return,
         parse_if,
         parse_for,
+        parse_while,
         parse_block,
         parse_expr_stmt,
     ))(input)

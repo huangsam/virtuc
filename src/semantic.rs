@@ -205,6 +205,17 @@ impl SemanticAnalyzer {
                 self.check_stmt(body);
                 self.scopes.pop();
             }
+            Stmt::While { cond, body } => {
+                let cond_ty = self.check_expr(cond);
+                if cond_ty != Some(Type::Int) {
+                    self.errors.push(SemanticError::TypeMismatch(
+                        "While condition must be an integer".to_string(),
+                    ));
+                }
+                self.scopes.push(HashMap::new());
+                self.check_stmt(body);
+                self.scopes.pop();
+            }
             Stmt::Expr(expr) => {
                 self.check_expr(expr);
             }

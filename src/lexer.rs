@@ -61,6 +61,10 @@ pub enum Token {
     #[token("for")]
     For,
 
+    /// While keyword
+    #[token("while")]
+    While,
+
     /// Return keyword
     #[token("return")]
     Return,

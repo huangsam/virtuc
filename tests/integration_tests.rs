@@ -397,3 +397,29 @@ fn test_unary_operators() {
 
     assert_eq!(status.code(), Some(42));
 }
+
+#[test]
+fn test_while_loop() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let output_path = temp_dir.path().join("test_while");
+
+    let source = r#"
+        int main() {
+            int count = 0;
+            int sum = 0;
+            while (count < 10) {
+                count = count + 1;
+                sum = sum + count;
+            }
+            // sum of 1..10 = 55
+            return sum;
+        }
+    "#;
+
+    compile(source, &output_path).expect("Compilation failed");
+    let status = Command::new(&output_path)
+        .status()
+        .expect("failed to run generated executable");
+
+    assert_eq!(status.code(), Some(55));
+}
