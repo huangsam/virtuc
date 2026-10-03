@@ -130,7 +130,7 @@ fn parse_postfix(input: &[Token]) -> IResult<&[Token], Expr> {
     ))
 }
 
-/// Parse an array index expression: identifier [ expr ]
+/// Parse an array index expression: `identifier [ expr ]`
 fn parse_index(input: &[Token]) -> IResult<&[Token], Expr> {
     map(
         tuple((
@@ -144,7 +144,7 @@ fn parse_index(input: &[Token]) -> IResult<&[Token], Expr> {
     )(input)
 }
 
-/// Parse array postfix: identifier [ expr ] (++|--)
+/// Parse array postfix: `identifier [ expr ] (++|--)`
 fn parse_array_postfix(input: &[Token]) -> IResult<&[Token], Expr> {
     map(
         tuple((
@@ -202,7 +202,7 @@ fn parse_call(input: &[Token]) -> IResult<&[Token], Expr> {
     )(input)
 }
 
-/// Parse prefix inc/dec: ++identifier | --identifier | ++identifier[expr] | --identifier[expr] | ++*unary | --*unary
+/// Parse prefix inc/dec: `++id` | `--id` | `++id[expr]` | `--id[expr]` | `++*unary` | `--*unary`
 fn parse_prefix_inc_dec(input: &[Token]) -> IResult<&[Token], Expr> {
     let (input, op_token) = alt((token(Token::PlusPlus), token(Token::MinusMinus)))(input)?;
     let op = match op_token {
@@ -418,7 +418,7 @@ fn parse_logical_or(input: &[Token]) -> IResult<&[Token], Expr> {
     Ok((input, expr))
 }
 
-/// Parse array assignment: identifier [ expr ] (=|+=|-=|*=|/=|%=) expr
+/// Parse array assignment: `identifier [ expr ] (=|+=|-=|*=|/=|%=) expr`
 fn parse_array_assignment(input: &[Token]) -> IResult<&[Token], Expr> {
     let (input, name) = parse_identifier(input)?;
     let (input, index) =
@@ -517,7 +517,7 @@ fn parse_deref_assignment(input: &[Token]) -> IResult<&[Token], Expr> {
     }
 }
 
-/// Parse an assignment expression: identifier (=|+=|-=|*=|/=|%=) expr | identifier [ expr ] (=|...) expr | *unary (=|...) expr
+/// Parse an assignment expression: `identifier (=|...) expr` | `identifier [ expr ] (=|...) expr` | `*unary (=|...) expr`
 fn parse_assignment_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
         parse_deref_assignment,
@@ -569,7 +569,7 @@ fn parse_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     parse_assignment_expr(input)
 }
 
-/// Parse an array declaration: type identifier [ int_literal ] ;
+/// Parse an array declaration: `type identifier [ int_literal ] ;`
 fn parse_array_declaration(input: &[Token]) -> IResult<&[Token], Stmt> {
     let (input, ty) = parse_type(input)?;
     let (input, name) = parse_identifier(input)?;
