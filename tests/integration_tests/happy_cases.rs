@@ -505,4 +505,85 @@ fn test_math_advanced_functions() {
     assert!(res.stdout.contains("floor=4.0 ceil=5.0 fabs=7.5 sin=0.0 cos=1.0"));
 }
 
+#[test]
+fn test_recursive_functions() {
+    let source = r#"
+        int factorial(int n) {
+            if (n <= 1) {
+                return 1;
+            }
+            return n * factorial(n - 1);
+        }
+
+        int fib(int n) {
+            if (n <= 0) {
+                return 0;
+            }
+            if (n == 1) {
+                return 1;
+            }
+            return fib(n - 1) + fib(n - 2);
+        }
+
+        int main() {
+            int f5 = factorial(5); // 120
+            int fib7 = fib(7);     // 13
+            // 120 - 13 = 107; 107 - 65 = 42
+            return (f5 - fib7) - 65;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+}
+
+#[test]
+fn test_nested_function_call_expressions() {
+    let source = r#"
+        int add(int a, int b) {
+            return a + b;
+        }
+
+        int mult(int a, int b) {
+            return a * b;
+        }
+
+        int main() {
+            // ( (2 + 3) * 4 ) + (10 + 12) = (5 * 4) + 22 = 20 + 22 = 42
+            int res = add(mult(add(2, 3), 4), add(10, 12));
+            return res;
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+}
+
+#[test]
+fn test_array_passed_to_pointer_parameter() {
+    let source = r#"
+        int sum_array(int* arr, int n) {
+            int s = 0;
+            for (int i = 0; i < n; i++) {
+                s += arr[i];
+            }
+            return s;
+        }
+
+        int main() {
+            int numbers[4];
+            numbers[0] = 7;
+            numbers[1] = 14;
+            numbers[2] = 11;
+            numbers[3] = 10;
+            // 7 + 14 + 11 + 10 = 42
+            return sum_array(numbers, 4);
+        }
+    "#;
+
+    let res = run_source(source);
+    assert_eq!(res.exit_code, Some(42));
+}
+
+
 
