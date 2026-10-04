@@ -15,7 +15,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
 
 # CLI compilation check
-cargo run -- compile tests/fixtures/for_loops.c -o /tmp/for_loops.out
+cargo run -- tests/fixtures/for_loops.c -o /tmp/for_loops.out
 ```
 
 ## Performance Expectations

@@ -41,11 +41,11 @@ Ensure you have Rust and LLVM installed. Then:
 cargo install --path .
 ```
 
-Once compiled, you can use the tool to compile C source files:
+Once compiled, you can use the `vcc` CLI to compile C source files:
 
 ```bash
 # Compile the source file
-virtuc compile hello.c
+vcc hello.c
 
 # Run the generated executable
 ./hello.out

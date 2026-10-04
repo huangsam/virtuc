@@ -1,13 +1,13 @@
-//! # VirtuC Compiler CLI
+//! # VirtuC Compiler CLI (`vcc`)
 //!
-//! This module provides the command-line interface for the `virtuc` compiler.
+//! This module provides the command-line interface for the `vcc` compiler.
 //! It handles parsing command-line arguments and orchestrating the compilation
 //! process from source files to executable binaries.
 //!
 //! ## Usage
 //!
 //! ```bash
-//! virtuc input.c -o output
+//! vcc input.c -o output
 //! ```
 //!
 //! ## Features
@@ -15,59 +15,47 @@
 //! - Compile C subset source files to native executables via LLVM
 //! - Optional output file specification
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use std::fs;
 use std::path::Path;
 
 use virtuc::compile;
 
 #[derive(Parser)]
-#[command(name = "virtuc")]
-#[command(about = "A Rust-based subset C compiler")]
+#[command(name = "vcc")]
+#[command(about = "VirtuC - A subset C compiler")]
 struct Args {
-    #[command(subcommand)]
-    command: Commands,
-}
+    /// Input C source file
+    input: String,
 
-#[derive(Subcommand)]
-enum Commands {
-    /// Compile C source to executable
-    Compile {
-        /// Input C source file
-        input: String,
-
-        /// Output executable file
-        #[arg(short, long)]
-        output: Option<String>,
-    },
+    /// Output executable file
+    #[arg(short, long)]
+    output: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    match args.command {
-        Commands::Compile { input, output } => {
-            // Read input file
-            let source = fs::read_to_string(&input)?;
+    // Read input file
+    let source = fs::read_to_string(&args.input)?;
 
-            // Determine output file
-            // Note: Defaulting to ".out" extension is tailored towards macOS and Linux systems.
-            // Windows users should explicitly specify an output file with ".exe" extension.
-            let output_str =
-                output.unwrap_or_else(|| input.trim_end_matches(".c").to_string() + ".out");
-            let output_path = Path::new(&output_str);
+    // Determine output file
+    // Note: Defaulting to ".out" extension is tailored towards macOS and Linux systems.
+    // Windows users should explicitly specify an output file with ".exe" extension.
+    let output_str = args
+        .output
+        .unwrap_or_else(|| args.input.trim_end_matches(".c").to_string() + ".out");
+    let output_path = Path::new(&output_str);
 
-            // Compile
-            match compile(&source, output_path) {
-                Ok(_) => {
-                    println!("Compiled {} to {}", input, output_str);
-                    Ok(())
-                }
-                Err(e) => {
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
+    // Compile
+    match compile(&source, output_path) {
+        Ok(_) => {
+            println!("Compiled {} to {}", args.input, output_str);
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
         }
     }
 }
