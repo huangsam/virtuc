@@ -32,6 +32,7 @@ use crate::lexer::Token;
 #[derive(Debug, PartialEq, Clone)]
 enum TopLevel {
     Include(String),
+    Struct(StructDef),
     Extern(ExternFunction),
     Function(Function),
 }
@@ -50,13 +51,17 @@ fn token(expected: Token) -> impl Fn(&[Token]) -> IResult<&[Token], Token> {
     }
 }
 
-/// Parse a type: (int | float | string | void) followed by zero or more '*'
+/// Parse a type: (int | float | string | void | struct id) followed by zero or more '*'
 fn parse_type(input: &[Token]) -> IResult<&[Token], Type> {
     let (input, base_ty) = alt((
         map(token(Token::Int), |_| Type::Int),
         map(token(Token::Float), |_| Type::Float),
         map(token(Token::StringType), |_| Type::String),
         map(token(Token::Void), |_| Type::Void),
+        map(
+            tuple((token(Token::Struct), parse_identifier)),
+            |(_, name)| Type::Struct(name),
+        ),
     ))(input)?;
 
     let (input, stars) = many0(token(Token::Multiply))(input)?;
@@ -65,6 +70,27 @@ fn parse_type(input: &[Token]) -> IResult<&[Token], Type> {
         ty = Type::Pointer(Box::new(ty));
     }
     Ok((input, ty))
+}
+
+/// Parse a struct field: type identifier ;
+fn parse_struct_field(input: &[Token]) -> IResult<&[Token], StructField> {
+    let (input, ty) = parse_type(input)?;
+    let (input, name) = parse_identifier(input)?;
+    let (input, _) = token(Token::Semicolon)(input)?;
+    Ok((input, StructField { ty, name }))
+}
+
+/// Parse a struct definition: struct identifier { fields* } ;
+fn parse_struct_def(input: &[Token]) -> IResult<&[Token], StructDef> {
+    let (input, _) = token(Token::Struct)(input)?;
+    let (input, name) = parse_identifier(input)?;
+    let (input, fields) = delimited(
+        token(Token::LBrace),
+        many0(parse_struct_field),
+        token(Token::RBrace),
+    )(input)?;
+    let (input, _) = token(Token::Semicolon)(input)?;
+    Ok((input, StructDef { name, fields }))
 }
 
 /// Parse an identifier
@@ -169,19 +195,6 @@ fn parse_array_postfix(input: &[Token]) -> IResult<&[Token], Expr> {
     ))
 }
 
-/// Parse a primary expression: literal | identifier | (expr) | call | postfix | index
-fn parse_primary_expr(input: &[Token]) -> IResult<&[Token], Expr> {
-    alt((
-        map(parse_literal, Expr::Literal),
-        parse_call,
-        parse_array_postfix,
-        parse_index,
-        parse_postfix,
-        map(parse_identifier, Expr::Identifier),
-        delimited(token(Token::LParen), parse_expr, token(Token::RParen)),
-    ))(input)
-}
-
 /// Parse a function call: identifier(args)
 fn parse_call(input: &[Token]) -> IResult<&[Token], Expr> {
     map(
@@ -197,7 +210,123 @@ fn parse_call(input: &[Token]) -> IResult<&[Token], Expr> {
     )(input)
 }
 
-/// Parse prefix inc/dec: `++id` | `--id` | `++id[expr]` | `--id[expr]` | `++*unary` | `--*unary`
+/// Helper to parse the base expression for a member path
+fn parse_member_base(input: &[Token]) -> IResult<&[Token], Expr> {
+    alt((
+        parse_call,
+        parse_index,
+        map(parse_identifier, Expr::Identifier),
+        delimited(token(Token::LParen), parse_expr, token(Token::RParen)),
+    ))(input)
+}
+
+type MemberAccessItem = (bool, String);
+type MemberPath = (Expr, Vec<MemberAccessItem>);
+
+/// Helper to parse member access chain (e.g. `.field` or `->field`)
+fn parse_member_access_tail(input: &[Token]) -> IResult<&[Token], Vec<MemberAccessItem>> {
+    many1(alt((
+        map(preceded(token(Token::Dot), parse_identifier), |f| {
+            (false, f)
+        }),
+        map(preceded(token(Token::Arrow), parse_identifier), |f| {
+            (true, f)
+        }),
+    )))(input)
+}
+
+/// Helper to fold a base expression and member accesses into a chain of MemberAccess / ArrowAccess
+fn fold_member_access(base: Expr, accesses: &[MemberAccessItem]) -> Expr {
+    let mut expr = base;
+    for (is_arrow, field) in accesses {
+        if *is_arrow {
+            expr = Expr::ArrowAccess {
+                target: Box::new(expr),
+                field: field.clone(),
+            };
+        } else {
+            expr = Expr::MemberAccess {
+                target: Box::new(expr),
+                field: field.clone(),
+            };
+        }
+    }
+    expr
+}
+
+/// Parse a member path: base (.field | ->field)+
+fn parse_member_path(input: &[Token]) -> IResult<&[Token], MemberPath> {
+    let (input, base) = parse_member_base(input)?;
+    let (input, accesses) = parse_member_access_tail(input)?;
+    Ok((input, (base, accesses)))
+}
+
+/// Parse member expression, optionally followed by postfix ++ or --: `base.field(++)?` | `base->field(++)?`
+fn parse_member_expr(input: &[Token]) -> IResult<&[Token], Expr> {
+    let (input, (base, mut accesses)) = parse_member_path(input)?;
+    if let Ok((rest, op_token)) = alt((token(Token::PlusPlus), token(Token::MinusMinus)))(input) {
+        let bin_op = match op_token {
+            Token::PlusPlus => BinOp::Plus,
+            Token::MinusMinus => BinOp::Minus,
+            _ => unreachable!(),
+        };
+        let (last_is_arrow, last_field) = accesses.pop().unwrap();
+        let target = fold_member_access(base, &accesses);
+        let current_val = if last_is_arrow {
+            Expr::ArrowAccess {
+                target: Box::new(target.clone()),
+                field: last_field.clone(),
+            }
+        } else {
+            Expr::MemberAccess {
+                target: Box::new(target.clone()),
+                field: last_field.clone(),
+            }
+        };
+        let value = Box::new(Expr::Binary {
+            left: Box::new(current_val),
+            op: bin_op,
+            right: Box::new(Expr::Literal(Literal::Int(1))),
+        });
+        if last_is_arrow {
+            Ok((
+                rest,
+                Expr::ArrowAssignment {
+                    target: Box::new(target),
+                    field: last_field,
+                    value,
+                },
+            ))
+        } else {
+            Ok((
+                rest,
+                Expr::MemberAssignment {
+                    target: Box::new(target),
+                    field: last_field,
+                    value,
+                },
+            ))
+        }
+    } else {
+        Ok((input, fold_member_access(base, &accesses)))
+    }
+}
+
+/// Parse a primary expression: literal | member_expr | call | postfix | index
+fn parse_primary_expr(input: &[Token]) -> IResult<&[Token], Expr> {
+    alt((
+        map(parse_literal, Expr::Literal),
+        parse_member_expr,
+        parse_call,
+        parse_array_postfix,
+        parse_index,
+        parse_postfix,
+        map(parse_identifier, Expr::Identifier),
+        delimited(token(Token::LParen), parse_expr, token(Token::RParen)),
+    ))(input)
+}
+
+/// Parse prefix inc/dec: `++id` | `--id` | `++id[expr]` | `--id[expr]` | `++*unary` | `--*unary` | `++path` | `--path`
 fn parse_prefix_inc_dec(input: &[Token]) -> IResult<&[Token], Expr> {
     let (input, op_token) = alt((token(Token::PlusPlus), token(Token::MinusMinus)))(input)?;
     let op = match op_token {
@@ -205,6 +334,45 @@ fn parse_prefix_inc_dec(input: &[Token]) -> IResult<&[Token], Expr> {
         Token::MinusMinus => BinOp::Minus,
         _ => unreachable!(),
     };
+    if let Ok((rest, (base, mut accesses))) = parse_member_path(input) {
+        let (last_is_arrow, last_field) = accesses.pop().unwrap();
+        let target = fold_member_access(base, &accesses);
+        let current_val = if last_is_arrow {
+            Expr::ArrowAccess {
+                target: Box::new(target.clone()),
+                field: last_field.clone(),
+            }
+        } else {
+            Expr::MemberAccess {
+                target: Box::new(target.clone()),
+                field: last_field.clone(),
+            }
+        };
+        let value = Box::new(Expr::Binary {
+            left: Box::new(current_val),
+            op,
+            right: Box::new(Expr::Literal(Literal::Int(1))),
+        });
+        if last_is_arrow {
+            return Ok((
+                rest,
+                Expr::ArrowAssignment {
+                    target: Box::new(target),
+                    field: last_field,
+                    value,
+                },
+            ));
+        } else {
+            return Ok((
+                rest,
+                Expr::MemberAssignment {
+                    target: Box::new(target),
+                    field: last_field,
+                    value,
+                },
+            ));
+        }
+    }
     if let Ok((rest, (_, target))) = tuple((token(Token::Multiply), parse_unary))(input) {
         return Ok((
             rest,
@@ -513,9 +681,74 @@ fn parse_deref_assignment(input: &[Token]) -> IResult<&[Token], Expr> {
     }
 }
 
-/// Parse an assignment expression: `identifier (=|...) expr` | `identifier [ expr ] (=|...) expr` | `*unary (=|...) expr`
+/// Parse member assignment: `target.field (=|+=|...) expr` or `target->field (=|+=|...) expr`
+fn parse_member_assignment(input: &[Token]) -> IResult<&[Token], Expr> {
+    let (input, (base, mut accesses)) = parse_member_path(input)?;
+    let (input, op_token) = alt((
+        token(Token::Assign),
+        token(Token::PlusAssign),
+        token(Token::MinusAssign),
+        token(Token::MultiplyAssign),
+        token(Token::DivideAssign),
+        token(Token::ModuloAssign),
+    ))(input)?;
+    let (input, val_expr) = parse_expr(input)?;
+    let (last_is_arrow, last_field) = accesses.pop().unwrap();
+    let target = fold_member_access(base, &accesses);
+    let value = match op_token {
+        Token::Assign => Box::new(val_expr),
+        op => {
+            let bin_op = match op {
+                Token::PlusAssign => BinOp::Plus,
+                Token::MinusAssign => BinOp::Minus,
+                Token::MultiplyAssign => BinOp::Multiply,
+                Token::DivideAssign => BinOp::Divide,
+                Token::ModuloAssign => BinOp::Modulo,
+                _ => unreachable!(),
+            };
+            let current_val = if last_is_arrow {
+                Expr::ArrowAccess {
+                    target: Box::new(target.clone()),
+                    field: last_field.clone(),
+                }
+            } else {
+                Expr::MemberAccess {
+                    target: Box::new(target.clone()),
+                    field: last_field.clone(),
+                }
+            };
+            Box::new(Expr::Binary {
+                left: Box::new(current_val),
+                op: bin_op,
+                right: Box::new(val_expr),
+            })
+        }
+    };
+    if last_is_arrow {
+        Ok((
+            input,
+            Expr::ArrowAssignment {
+                target: Box::new(target),
+                field: last_field,
+                value,
+            },
+        ))
+    } else {
+        Ok((
+            input,
+            Expr::MemberAssignment {
+                target: Box::new(target),
+                field: last_field,
+                value,
+            },
+        ))
+    }
+}
+
+/// Parse an assignment expression: `target.field (=|...) expr` | `identifier (=|...) expr` | `identifier [ expr ] (=|...) expr` | `*unary (=|...) expr`
 fn parse_assignment_expr(input: &[Token]) -> IResult<&[Token], Expr> {
     alt((
+        parse_member_assignment,
         parse_deref_assignment,
         parse_array_assignment,
         map(
@@ -720,6 +953,7 @@ fn parse_expr_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
 /// Parse a statement
 fn parse_stmt(input: &[Token]) -> IResult<&[Token], Stmt> {
     alt((
+        map(parse_struct_def, Stmt::StructDef),
         parse_array_declaration,
         parse_declaration,
         parse_return,
@@ -791,10 +1025,11 @@ fn parse_include(input: &[Token]) -> IResult<&[Token], String> {
     }
 }
 
-/// Parse a top-level item: include, extern function or function definition
+/// Parse a top-level item: include, struct, extern function or function definition
 fn parse_top_level(input: &[Token]) -> IResult<&[Token], TopLevel> {
     alt((
         map(parse_include, TopLevel::Include),
+        map(parse_struct_def, TopLevel::Struct),
         map(parse_extern_function, TopLevel::Extern),
         map(parse_function, TopLevel::Function),
     ))(input)
@@ -830,11 +1065,13 @@ pub fn parse(tokens: &[Token]) -> Result<Program, String> {
         return Err(format!("Unexpected tokens at end: {:?}", remaining));
     }
     let mut includes = Vec::new();
+    let mut structs = Vec::new();
     let mut extern_functions = Vec::new();
     let mut functions = Vec::new();
     for item in items {
         match item {
             TopLevel::Include(h) => includes.push(h),
+            TopLevel::Struct(s) => structs.push(s),
             TopLevel::Extern(e) => extern_functions.push(e),
             TopLevel::Function(f) => functions.push(f),
         }
@@ -851,6 +1088,7 @@ pub fn parse(tokens: &[Token]) -> Result<Program, String> {
 
     Ok(Program {
         includes,
+        structs,
         extern_functions,
         functions,
     })
@@ -1058,5 +1296,31 @@ mod tests {
                 _ => panic!("Expected *a = *b deref assignment"),
             }
         }
+    }
+
+    #[test]
+    fn test_parse_struct() {
+        let input = "
+            struct Point {
+                int x;
+                int y;
+            };
+
+            int main() {
+                struct Point p;
+                p.x = 10;
+                struct Point* ptr = &p;
+                ptr->x = 20;
+                return ptr->x + p.y;
+            }
+        ";
+        let tokens = lex(input).unwrap();
+        let ast = parse(&tokens).unwrap();
+        assert_eq!(ast.structs.len(), 1);
+        assert_eq!(ast.structs[0].name, "Point");
+        assert_eq!(ast.structs[0].fields.len(), 2);
+        assert_eq!(ast.structs[0].fields[0].name, "x");
+        assert_eq!(ast.structs[0].fields[0].ty, Type::Int);
+        assert_eq!(ast.functions.len(), 1);
     }
 }

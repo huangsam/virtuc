@@ -31,6 +31,26 @@ pub enum Type {
     Void,
     /// Pointer type (e.g. int*, void*)
     Pointer(Box<Type>),
+    /// Struct type by name (e.g. `struct Point`)
+    Struct(String),
+}
+
+/// Represents a field in a struct definition.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct StructField {
+    /// Field type
+    pub ty: Type,
+    /// Field name
+    pub name: String,
+}
+
+/// Represents a struct definition (`struct Name { ... };`).
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct StructDef {
+    /// Name of the struct
+    pub name: String,
+    /// List of fields in order
+    pub fields: Vec<StructField>,
 }
 
 /// Represents binary operators.
@@ -158,6 +178,38 @@ pub enum Expr {
         /// Value expression to assign
         value: Box<Expr>,
     },
+    /// Struct member access: `target.field`
+    MemberAccess {
+        /// Target expression evaluating to a struct
+        target: Box<Expr>,
+        /// Field name
+        field: String,
+    },
+    /// Struct pointer member access: `target->field`
+    ArrowAccess {
+        /// Target expression evaluating to a pointer to a struct
+        target: Box<Expr>,
+        /// Field name
+        field: String,
+    },
+    /// Struct member assignment: `target.field = value`
+    MemberAssignment {
+        /// Target expression evaluating to a struct
+        target: Box<Expr>,
+        /// Field name
+        field: String,
+        /// Value to assign
+        value: Box<Expr>,
+    },
+    /// Struct pointer member assignment: `target->field = value`
+    ArrowAssignment {
+        /// Target expression evaluating to a pointer to a struct
+        target: Box<Expr>,
+        /// Field name
+        field: String,
+        /// Value to assign
+        value: Box<Expr>,
+    },
 }
 
 /// Represents statements in the AST.
@@ -216,6 +268,8 @@ pub enum Stmt {
     Break,
     /// Continue statement
     Continue,
+    /// Struct definition statement
+    StructDef(StructDef),
     /// Expression statement (for function calls, etc.)
     Expr(Expr),
 }
@@ -251,6 +305,8 @@ pub struct ExternFunction {
 pub struct Program {
     /// List of include directives (header names)
     pub includes: Vec<String>,
+    /// List of struct definitions
+    pub structs: Vec<StructDef>,
     /// List of extern function declarations
     pub extern_functions: Vec<ExternFunction>,
     /// List of function definitions
@@ -297,5 +353,24 @@ mod tests {
         } else {
             panic!("Expected If statement");
         }
+    }
+
+    #[test]
+    fn test_struct_definition() {
+        let def = StructDef {
+            name: "Point".to_string(),
+            fields: vec![
+                StructField {
+                    ty: Type::Int,
+                    name: "x".to_string(),
+                },
+                StructField {
+                    ty: Type::Int,
+                    name: "y".to_string(),
+                },
+            ],
+        };
+        assert_eq!(def.name, "Point");
+        assert_eq!(def.fields.len(), 2);
     }
 }

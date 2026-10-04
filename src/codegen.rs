@@ -23,7 +23,7 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::targets::{InitializationConfig, Target, TargetMachine};
-use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue};
 use inkwell::{FloatPredicate, IntPredicate};
 use std::collections::HashMap;
@@ -36,6 +36,10 @@ pub struct CodeGenerator<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
+    /// Struct LLVM types
+    struct_types: HashMap<String, StructType<'ctx>>,
+    /// Struct definitions
+    struct_defs: HashMap<String, StructDef>,
     /// Variable environment: name -> (pointer to value, type)
     variables: HashMap<String, (PointerValue<'ctx>, Type)>,
     /// Array environment: name -> (pointer to array, element type, dims)
@@ -63,6 +67,8 @@ impl<'ctx> CodeGenerator<'ctx> {
             context,
             module,
             builder,
+            struct_types: HashMap::new(),
+            struct_defs: HashMap::new(),
             variables: HashMap::new(),
             arrays: HashMap::new(),
             function_return_types: HashMap::new(),
@@ -72,6 +78,23 @@ impl<'ctx> CodeGenerator<'ctx> {
 
     /// Generates LLVM IR for the program.
     pub fn generate(&mut self, program: &Program) -> Result<(), CodegenError> {
+        // Register top-level struct declarations
+        for struct_def in &program.structs {
+            let struct_ty = self.context.opaque_struct_type(&struct_def.name);
+            self.struct_types.insert(struct_def.name.clone(), struct_ty);
+            self.struct_defs
+                .insert(struct_def.name.clone(), struct_def.clone());
+        }
+        for struct_def in &program.structs {
+            let field_types: Vec<BasicTypeEnum<'ctx>> = struct_def
+                .fields
+                .iter()
+                .map(|f| self.llvm_type(&f.ty))
+                .collect();
+            let struct_ty = self.struct_types.get(&struct_def.name).unwrap();
+            struct_ty.set_body(&field_types, false);
+        }
+
         for header in &program.includes {
             for ext in crate::header_registry::externs_for_header(header) {
                 self.function_return_types
@@ -195,6 +218,56 @@ impl<'ctx> CodeGenerator<'ctx> {
                     _ => None,
                 }
             }
+            Expr::MemberAccess { target, field } => {
+                let target_ty = self.expr_type(target)?;
+                match target_ty {
+                    Type::Struct(name) => {
+                        let def = self.struct_defs.get(&name)?;
+                        let f = def.fields.iter().find(|f| f.name == *field)?;
+                        Some(f.ty.clone())
+                    }
+                    _ => None,
+                }
+            }
+            Expr::ArrowAccess { target, field } => {
+                let target_ty = self.expr_type(target)?;
+                match target_ty {
+                    Type::Pointer(inner) => match *inner {
+                        Type::Struct(name) => {
+                            let def = self.struct_defs.get(&name)?;
+                            let f = def.fields.iter().find(|f| f.name == *field)?;
+                            Some(f.ty.clone())
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            }
+            Expr::MemberAssignment { target, field, .. } => {
+                let target_ty = self.expr_type(target)?;
+                match target_ty {
+                    Type::Struct(name) => {
+                        let def = self.struct_defs.get(&name)?;
+                        let f = def.fields.iter().find(|f| f.name == *field)?;
+                        Some(f.ty.clone())
+                    }
+                    _ => None,
+                }
+            }
+            Expr::ArrowAssignment { target, field, .. } => {
+                let target_ty = self.expr_type(target)?;
+                match target_ty {
+                    Type::Pointer(inner) => match *inner {
+                        Type::Struct(name) => {
+                            let def = self.struct_defs.get(&name)?;
+                            let f = def.fields.iter().find(|f| f.name == *field)?;
+                            Some(f.ty.clone())
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            }
         }
     }
 
@@ -296,6 +369,12 @@ impl<'ctx> CodeGenerator<'ctx> {
                         ))
                         .unwrap();
                 }
+                Type::Struct(ref name) => {
+                    let struct_ty = *self.struct_types.get(name).unwrap();
+                    self.builder
+                        .build_return(Some(&struct_ty.const_zero()))
+                        .unwrap();
+                }
             }
         }
 
@@ -316,6 +395,20 @@ impl<'ctx> CodeGenerator<'ctx> {
             return Ok(());
         }
         match stmt {
+            Stmt::StructDef(struct_def) => {
+                if !self.struct_types.contains_key(&struct_def.name) {
+                    let struct_ty = self.context.opaque_struct_type(&struct_def.name);
+                    self.struct_types.insert(struct_def.name.clone(), struct_ty);
+                    self.struct_defs
+                        .insert(struct_def.name.clone(), struct_def.clone());
+                    let field_types: Vec<BasicTypeEnum<'ctx>> = struct_def
+                        .fields
+                        .iter()
+                        .map(|f| self.llvm_type(&f.ty))
+                        .collect();
+                    struct_ty.set_body(&field_types, false);
+                }
+            }
             Stmt::Declaration { ty, name, init } => {
                 let llvm_ty = self.llvm_type(ty);
                 let alloca = self.builder.build_alloca(llvm_ty, name).unwrap();
@@ -707,6 +800,10 @@ impl<'ctx> CodeGenerator<'ctx> {
                         op: UnaryOp::Deref,
                         expr: inner,
                     } => self.generate_expr(inner),
+                    Expr::MemberAccess { .. } | Expr::ArrowAccess { .. } => {
+                        let (field_ptr, _) = self.get_member_pointer(expr)?;
+                        Ok(field_ptr.into())
+                    }
                     _ => Err(CodegenError("Cannot take address of rvalue".to_string())),
                 },
                 UnaryOp::Deref => {
@@ -1416,6 +1513,217 @@ impl<'ctx> CodeGenerator<'ctx> {
                 self.builder.build_store(ptr, val).unwrap();
                 Ok(val)
             }
+            Expr::MemberAccess { .. } | Expr::ArrowAccess { .. } => {
+                let (field_ptr, field_ty) = self.get_member_pointer(expr)?;
+                let field_llvm_ty = self.llvm_type(&field_ty);
+                let val = self
+                    .builder
+                    .build_load(field_llvm_ty, field_ptr, "member")
+                    .unwrap();
+                Ok(val)
+            }
+            Expr::MemberAssignment {
+                target,
+                field,
+                value,
+            } => {
+                let val = self.generate_expr(value)?;
+                let (field_ptr, _) = self.get_member_pointer(&Expr::MemberAccess {
+                    target: target.clone(),
+                    field: field.clone(),
+                })?;
+                self.builder.build_store(field_ptr, val).unwrap();
+                Ok(val)
+            }
+            Expr::ArrowAssignment {
+                target,
+                field,
+                value,
+            } => {
+                let val = self.generate_expr(value)?;
+                let (field_ptr, _) = self.get_member_pointer(&Expr::ArrowAccess {
+                    target: target.clone(),
+                    field: field.clone(),
+                })?;
+                self.builder.build_store(field_ptr, val).unwrap();
+                Ok(val)
+            }
+        }
+    }
+
+    /// Gets a pointer to a struct member and its type.
+    fn get_member_pointer(
+        &mut self,
+        expr: &Expr,
+    ) -> Result<(PointerValue<'ctx>, Type), CodegenError> {
+        match expr {
+            Expr::MemberAccess { target, field } => {
+                let (struct_ptr, struct_name) = self.get_struct_base_pointer(target)?;
+                let struct_def =
+                    self.struct_defs.get(&struct_name).cloned().ok_or_else(|| {
+                        CodegenError(format!("Undefined struct: {}", struct_name))
+                    })?;
+                let idx = struct_def
+                    .fields
+                    .iter()
+                    .position(|f| f.name == *field)
+                    .ok_or_else(|| {
+                        CodegenError(format!(
+                            "Field '{}' not found in struct '{}'",
+                            field, struct_name
+                        ))
+                    })?;
+                let field_ty = struct_def.fields[idx].ty.clone();
+                let struct_ty = *self.struct_types.get(&struct_name).ok_or_else(|| {
+                    CodegenError(format!("Struct type not found: {}", struct_name))
+                })?;
+                let field_ptr = self
+                    .builder
+                    .build_struct_gep(struct_ty, struct_ptr, idx as u32, field)
+                    .map_err(|e| CodegenError(format!("GEP error: {:?}", e)))?;
+                Ok((field_ptr, field_ty))
+            }
+            Expr::ArrowAccess { target, field } => {
+                let target_val = self.generate_expr(target)?;
+                let struct_ptr = target_val.into_pointer_value();
+                let target_ty = self.expr_type(target).ok_or_else(|| {
+                    CodegenError("Could not determine type of arrow target".to_string())
+                })?;
+                let struct_name = match target_ty {
+                    Type::Pointer(inner) => match *inner {
+                        Type::Struct(name) => name,
+                        _ => {
+                            return Err(CodegenError(
+                                "Arrow operator on pointer to non-struct".to_string(),
+                            ));
+                        }
+                    },
+                    _ => {
+                        return Err(CodegenError("Arrow operator on non-pointer".to_string()));
+                    }
+                };
+                let struct_def =
+                    self.struct_defs.get(&struct_name).cloned().ok_or_else(|| {
+                        CodegenError(format!("Undefined struct: {}", struct_name))
+                    })?;
+                let idx = struct_def
+                    .fields
+                    .iter()
+                    .position(|f| f.name == *field)
+                    .ok_or_else(|| {
+                        CodegenError(format!(
+                            "Field '{}' not found in struct '{}'",
+                            field, struct_name
+                        ))
+                    })?;
+                let field_ty = struct_def.fields[idx].ty.clone();
+                let struct_ty = *self.struct_types.get(&struct_name).ok_or_else(|| {
+                    CodegenError(format!("Struct type not found: {}", struct_name))
+                })?;
+                let field_ptr = self
+                    .builder
+                    .build_struct_gep(struct_ty, struct_ptr, idx as u32, field)
+                    .map_err(|e| CodegenError(format!("GEP error: {:?}", e)))?;
+                Ok((field_ptr, field_ty))
+            }
+            _ => Err(CodegenError(
+                "Expected MemberAccess or ArrowAccess".to_string(),
+            )),
+        }
+    }
+
+    /// Resolves the pointer to the base struct and its struct name.
+    fn get_struct_base_pointer(
+        &mut self,
+        target: &Expr,
+    ) -> Result<(PointerValue<'ctx>, String), CodegenError> {
+        match target {
+            Expr::Identifier(name) => {
+                if let Some((ptr, ty)) = self.variables.get(name) {
+                    match ty {
+                        Type::Struct(struct_name) => Ok((*ptr, struct_name.clone())),
+                        _ => Err(CodegenError(format!("Variable '{}' is not a struct", name))),
+                    }
+                } else {
+                    Err(CodegenError(format!("Undefined variable: {}", name)))
+                }
+            }
+            Expr::MemberAccess { .. } | Expr::ArrowAccess { .. } => {
+                let (ptr, ty) = self.get_member_pointer(target)?;
+                match ty {
+                    Type::Struct(struct_name) => Ok((ptr, struct_name)),
+                    _ => Err(CodegenError("Member is not a struct".to_string())),
+                }
+            }
+            Expr::Unary {
+                op: UnaryOp::Deref,
+                expr,
+            } => {
+                let val = self.generate_expr(expr)?;
+                let ptr = val.into_pointer_value();
+                let ty = self
+                    .expr_type(expr)
+                    .ok_or_else(|| CodegenError("Could not determine deref type".to_string()))?;
+                match ty {
+                    Type::Pointer(inner) => match *inner {
+                        Type::Struct(struct_name) => Ok((ptr, struct_name)),
+                        _ => Err(CodegenError("Deref of pointer to non-struct".to_string())),
+                    },
+                    _ => Err(CodegenError("Deref of non-pointer".to_string())),
+                }
+            }
+            Expr::Index { name, indices } => {
+                let mut idx_ints = Vec::with_capacity(indices.len());
+                for idx in indices {
+                    let idx_val = self.generate_expr(idx)?;
+                    if idx_val.get_type().is_int_type() {
+                        idx_ints.push(idx_val.into_int_value());
+                    } else {
+                        return Err(CodegenError("Array index must be an integer".to_string()));
+                    }
+                }
+                if let Some(&(ptr, ref ty, ref dims)) = self.arrays.get(name) {
+                    match ty {
+                        Type::Struct(struct_name) => {
+                            let arr_llvm_ty = self.llvm_array_type(ty, dims);
+                            let mut gep_indices = vec![self.context.i64_type().const_zero()];
+                            gep_indices.extend(idx_ints);
+                            let elem_ptr = unsafe {
+                                self.builder
+                                    .build_in_bounds_gep(
+                                        arr_llvm_ty,
+                                        ptr,
+                                        &gep_indices,
+                                        "arr_struct_elem",
+                                    )
+                                    .unwrap()
+                            };
+                            Ok((elem_ptr, struct_name.clone()))
+                        }
+                        _ => Err(CodegenError(format!(
+                            "Array '{}' is not an array of structs",
+                            name
+                        ))),
+                    }
+                } else {
+                    Err(CodegenError(format!("Undefined array: {}", name)))
+                }
+            }
+            other => {
+                let val = self.generate_expr(other)?;
+                let ty = self
+                    .expr_type(other)
+                    .ok_or_else(|| CodegenError("Could not determine expr type".to_string()))?;
+                match ty {
+                    Type::Struct(struct_name) => {
+                        let llvm_ty = self.llvm_type(&Type::Struct(struct_name.clone()));
+                        let temp = self.builder.build_alloca(llvm_ty, "tmp_struct").unwrap();
+                        self.builder.build_store(temp, val).unwrap();
+                        Ok((temp, struct_name))
+                    }
+                    _ => Err(CodegenError("Expression is not a struct".to_string())),
+                }
+            }
         }
     }
 
@@ -1461,6 +1769,12 @@ impl<'ctx> CodeGenerator<'ctx> {
             Type::Float => self.context.f64_type().into(),
             Type::String => self.context.ptr_type(AddressSpace::default()).into(),
             Type::Pointer(_) => self.context.ptr_type(AddressSpace::default()).into(),
+            Type::Struct(name) => {
+                let struct_ty = self.struct_types.get(name).unwrap_or_else(|| {
+                    panic!("Undefined struct in codegen: {}", name);
+                });
+                (*struct_ty).into()
+            }
             Type::Void => panic!("Void cannot be converted to BasicTypeEnum"),
         }
     }
@@ -1490,5 +1804,29 @@ mod tests {
         assert!(ir.contains("define i64 @add(i64 %0, i64 %1)"));
         assert!(ir.contains("add i64"));
         assert!(ir.contains("ret i64"));
+    }
+
+    #[test]
+    fn test_generate_struct() {
+        let input = "
+            struct Point {
+                int x;
+                int y;
+            };
+
+            int main() {
+                struct Point p;
+                p.x = 10;
+                p.y = 20;
+                struct Point* ptr = &p;
+                ptr->x = 30;
+                return p.x + ptr->y;
+            }
+        ";
+        let tokens = lex(input).unwrap();
+        let ast = parse(&tokens).unwrap();
+        let ir = generate_ir(&ast).unwrap();
+        assert!(ir.contains("%Point = type { i64, i64 }"));
+        assert!(ir.contains("getelementptr"));
     }
 }

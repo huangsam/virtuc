@@ -24,6 +24,8 @@ use std::collections::HashMap;
 pub struct SemanticAnalyzer {
     /// Global function symbols: name -> (return_type, param_types, is_variadic)
     functions: HashMap<String, (Type, Vec<Type>, bool)>,
+    /// Global struct definitions: name -> StructDef
+    structs: HashMap<String, StructDef>,
     /// Stack of scopes for variables: each scope is name -> type
     scopes: Vec<HashMap<String, Type>>,
     /// Stack of scopes for arrays: each scope is name -> (element type, dims)
@@ -47,6 +49,7 @@ impl SemanticAnalyzer {
     pub fn new() -> Self {
         Self {
             functions: HashMap::new(),
+            structs: HashMap::new(),
             scopes: vec![HashMap::new()], // Global scope
             array_scopes: vec![HashMap::new()],
             current_return_type: None,
@@ -57,11 +60,42 @@ impl SemanticAnalyzer {
 
     /// Analyzes the program and returns any semantic errors.
     pub fn analyze(&mut self, program: &Program) -> Vec<SemanticError> {
+        self.collect_structs(program);
         self.collect_functions(program);
         for function in &program.functions {
             self.analyze_function(function);
         }
         self.errors.clone()
+    }
+
+    /// Collects struct definitions into the global symbol table.
+    fn collect_structs(&mut self, program: &Program) {
+        for struct_def in &program.structs {
+            self.register_struct(struct_def);
+        }
+    }
+
+    /// Registers a struct definition and checks for duplicate fields.
+    fn register_struct(&mut self, struct_def: &StructDef) {
+        if self.structs.contains_key(&struct_def.name) {
+            self.errors
+                .push(SemanticError::DuplicateVariable(struct_def.name.clone()));
+            return;
+        }
+        let mut field_names = std::collections::HashSet::new();
+        for field in &struct_def.fields {
+            if !field_names.insert(&field.name) {
+                self.errors
+                    .push(SemanticError::DuplicateVariable(field.name.clone()));
+            }
+            if field.ty == Type::Void {
+                self.errors.push(SemanticError::TypeMismatch(
+                    "Struct field cannot have void type".to_string(),
+                ));
+            }
+        }
+        self.structs
+            .insert(struct_def.name.clone(), struct_def.clone());
     }
 
     /// Collects function declarations into the global symbol table.
@@ -139,11 +173,22 @@ impl SemanticAnalyzer {
     /// Checks a statement.
     fn check_stmt(&mut self, stmt: &Stmt) {
         match stmt {
+            Stmt::StructDef(struct_def) => {
+                self.register_struct(struct_def);
+            }
             Stmt::Declaration { ty, name, init } => {
                 if *ty == Type::Void {
                     self.errors.push(SemanticError::TypeMismatch(
                         "Variable cannot have void type".to_string(),
                     ));
+                }
+                if let Type::Struct(struct_name) = ty
+                    && !self.structs.contains_key(struct_name)
+                {
+                    self.errors.push(SemanticError::TypeMismatch(format!(
+                        "Undefined struct type: {}",
+                        struct_name
+                    )));
                 }
                 if self.scopes.last().unwrap().contains_key(name)
                     || self.array_scopes.last().unwrap().contains_key(name)
@@ -171,6 +216,14 @@ impl SemanticAnalyzer {
                     self.errors.push(SemanticError::TypeMismatch(
                         "Array element cannot have void type".to_string(),
                     ));
+                }
+                if let Type::Struct(struct_name) = ty
+                    && !self.structs.contains_key(struct_name)
+                {
+                    self.errors.push(SemanticError::TypeMismatch(format!(
+                        "Undefined struct type: {}",
+                        struct_name
+                    )));
                 }
                 if dims.is_empty() || dims.contains(&0) {
                     self.errors.push(SemanticError::TypeMismatch(
@@ -397,6 +450,10 @@ impl SemanticAnalyzer {
                         op: UnaryOp::Deref,
                         expr: inner,
                     } => self.check_expr(inner),
+                    Expr::MemberAccess { .. } | Expr::ArrowAccess { .. } => {
+                        let member_ty = self.check_expr(expr)?;
+                        Some(Type::Pointer(Box::new(member_ty)))
+                    }
                     _ => {
                         self.errors.push(SemanticError::TypeMismatch(
                             "Cannot take address of rvalue".to_string(),
@@ -669,6 +726,170 @@ impl SemanticAnalyzer {
                     None
                 }
             }
+            Expr::MemberAccess { target, field } => {
+                let target_ty = self.check_expr(target)?;
+                match target_ty {
+                    Type::Struct(name) => {
+                        if let Some(def) = self.structs.get(&name) {
+                            if let Some(f) = def.fields.iter().find(|f| f.name == *field) {
+                                Some(f.ty.clone())
+                            } else {
+                                self.errors.push(SemanticError::TypeMismatch(format!(
+                                    "Struct '{}' has no field '{}'",
+                                    name, field
+                                )));
+                                None
+                            }
+                        } else {
+                            self.errors.push(SemanticError::TypeMismatch(format!(
+                                "Undefined struct type: {}",
+                                name
+                            )));
+                            None
+                        }
+                    }
+                    _ => {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Cannot access field '{}' of non-struct type {:?}",
+                            field, target_ty
+                        )));
+                        None
+                    }
+                }
+            }
+            Expr::ArrowAccess { target, field } => {
+                let target_ty = self.check_expr(target)?;
+                match target_ty {
+                    Type::Pointer(inner) => match *inner {
+                        Type::Struct(name) => {
+                            if let Some(def) = self.structs.get(&name) {
+                                if let Some(f) = def.fields.iter().find(|f| f.name == *field) {
+                                    Some(f.ty.clone())
+                                } else {
+                                    self.errors.push(SemanticError::TypeMismatch(format!(
+                                        "Struct '{}' has no field '{}'",
+                                        name, field
+                                    )));
+                                    None
+                                }
+                            } else {
+                                self.errors.push(SemanticError::TypeMismatch(format!(
+                                    "Undefined struct type: {}",
+                                    name
+                                )));
+                                None
+                            }
+                        }
+                        _ => {
+                            self.errors.push(SemanticError::TypeMismatch(format!(
+                                "Arrow operator requires pointer to struct, got pointer to {:?}",
+                                inner
+                            )));
+                            None
+                        }
+                    },
+                    _ => {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Arrow operator requires pointer to struct, got {:?}",
+                            target_ty
+                        )));
+                        None
+                    }
+                }
+            }
+            Expr::MemberAssignment {
+                target,
+                field,
+                value,
+            } => {
+                let target_ty = self.check_expr(target);
+                let val_ty = self.check_expr(value);
+                match target_ty {
+                    Some(Type::Struct(name)) => {
+                        if let Some(def) = self.structs.get(&name) {
+                            if let Some(f) = def.fields.iter().find(|f| f.name == *field) {
+                                if val_ty.as_ref() != Some(&f.ty) {
+                                    self.errors.push(SemanticError::TypeMismatch(format!(
+                                        "Cannot assign {:?} to field '{}' of type {:?}",
+                                        val_ty, field, f.ty
+                                    )));
+                                }
+                                Some(f.ty.clone())
+                            } else {
+                                self.errors.push(SemanticError::TypeMismatch(format!(
+                                    "Struct '{}' has no field '{}'",
+                                    name, field
+                                )));
+                                None
+                            }
+                        } else {
+                            self.errors.push(SemanticError::TypeMismatch(format!(
+                                "Undefined struct type: {}",
+                                name
+                            )));
+                            None
+                        }
+                    }
+                    _ => {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Cannot assign to field '{}' of non-struct type {:?}",
+                            field, target_ty
+                        )));
+                        None
+                    }
+                }
+            }
+            Expr::ArrowAssignment {
+                target,
+                field,
+                value,
+            } => {
+                let target_ty = self.check_expr(target);
+                let val_ty = self.check_expr(value);
+                match target_ty {
+                    Some(Type::Pointer(inner)) => match *inner {
+                        Type::Struct(name) => {
+                            if let Some(def) = self.structs.get(&name) {
+                                if let Some(f) = def.fields.iter().find(|f| f.name == *field) {
+                                    if val_ty.as_ref() != Some(&f.ty) {
+                                        self.errors.push(SemanticError::TypeMismatch(format!(
+                                            "Cannot assign {:?} to field '{}' of type {:?}",
+                                            val_ty, field, f.ty
+                                        )));
+                                    }
+                                    Some(f.ty.clone())
+                                } else {
+                                    self.errors.push(SemanticError::TypeMismatch(format!(
+                                        "Struct '{}' has no field '{}'",
+                                        name, field
+                                    )));
+                                    None
+                                }
+                            } else {
+                                self.errors.push(SemanticError::TypeMismatch(format!(
+                                    "Undefined struct type: {}",
+                                    name
+                                )));
+                                None
+                            }
+                        }
+                        _ => {
+                            self.errors.push(SemanticError::TypeMismatch(format!(
+                                "Arrow operator requires pointer to struct, got pointer to {:?}",
+                                inner
+                            )));
+                            None
+                        }
+                    },
+                    _ => {
+                        self.errors.push(SemanticError::TypeMismatch(format!(
+                            "Arrow operator requires pointer to struct, got {:?}",
+                            target_ty
+                        )));
+                        None
+                    }
+                }
+            }
         }
     }
 
@@ -794,6 +1015,53 @@ mod tests {
     #[test]
     fn test_invalid_array_type_mismatch() {
         let input = "int test() { int arr[10]; arr[0] = 3.14; return arr[0]; }";
+        let tokens = lex(input).unwrap();
+        let ast = parse(&tokens).unwrap();
+        let errors = analyze(&ast);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::TypeMismatch(_)));
+    }
+
+    #[test]
+    fn test_valid_struct_operations() {
+        let input = "
+            struct Point {
+                int x;
+                float y;
+            };
+
+            int test() {
+                struct Point p;
+                p.x = 10;
+                p.y = 3.14;
+                struct Point* ptr = &p;
+                ptr->x = 20;
+                return ptr->x;
+            }
+        ";
+        let tokens = lex(input).unwrap();
+        let ast = parse(&tokens).unwrap();
+        let errors = analyze(&ast);
+        assert!(
+            errors.is_empty(),
+            "Unexpected semantic errors: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_invalid_struct_field_access() {
+        let input = "
+            struct Point {
+                int x;
+            };
+
+            int test() {
+                struct Point p;
+                p.z = 10;
+                return p.x;
+            }
+        ";
         let tokens = lex(input).unwrap();
         let ast = parse(&tokens).unwrap();
         let errors = analyze(&ast);

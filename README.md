@@ -19,7 +19,8 @@ VirtuC supports the E2E compilation from C source code to [LLVM IR] for native e
 
 ## Supported C subset
 
-- **Types**: `int` (64-bit), `float` (64-bit), `void`, pointers (`T*`), fixed-size 1D and 2D arrays (`T arr[N]`, `T arr[R][C]`)
+- **Types**: `int` (64-bit), `float` (64-bit), `void`, pointers (`T*`), fixed-size 1D and 2D arrays (`T arr[N]`, `T arr[R][C]`), structs (`struct Name`)
+- **Structs**: Declarations (`struct Name { ... }`), nested structs, recursive pointers, and copy assignment
 - **Operators**:
   - Arithmetic: `+`, `-`, `*`, `/`, `%`
   - Unary: `-` (negation), `!` (logical NOT), `&` (address-of), `*` (dereference)
@@ -28,6 +29,7 @@ VirtuC supports the E2E compilation from C source code to [LLVM IR] for native e
   - Logical: `&&`, `||` (with short-circuit evaluation)
   - Assignment: `=`, `+=`, `-=`, `*=`, `/=`, `%=`
   - Indexing: `arr[i]`, `arr[i][j]`, `ptr[i]`
+  - Member access: `.`, `->`
 - **Control flow**: `if-else`, `for` loops, `while` loops, `break`, `continue`
 - **Functions**: Value-returning and `void` functions, pass-by-value and pass-by-pointer, variadic externs
 - **Comments**: Single-line (`// ...`) and multi-line block comments (`/* ... */`)

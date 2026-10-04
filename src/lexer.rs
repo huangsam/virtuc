@@ -54,6 +54,10 @@ pub enum Token {
     #[token("void")]
     Void,
 
+    /// Struct keyword
+    #[token("struct")]
+    Struct,
+
     /// If keyword
     #[token("if")]
     If,
@@ -243,6 +247,14 @@ pub enum Token {
     /// Ellipsis for variadic functions
     #[token("...")]
     Ellipsis,
+
+    /// Dot operator
+    #[token(".")]
+    Dot,
+
+    /// Arrow operator
+    #[token("->")]
+    Arrow,
 }
 
 /// Lexes the input source code into a vector of tokens.
@@ -490,5 +502,36 @@ mod tests {
             Token::Semicolon,
         ];
         assert_eq!(lex(input).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_struct_tokens() {
+        let input = "struct Point { int x; }; p.x = 1; ptr->x = 2;";
+        let tokens = lex(input).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Struct,
+                Token::Identifier("Point".to_string()),
+                Token::LBrace,
+                Token::Int,
+                Token::Identifier("x".to_string()),
+                Token::Semicolon,
+                Token::RBrace,
+                Token::Semicolon,
+                Token::Identifier("p".to_string()),
+                Token::Dot,
+                Token::Identifier("x".to_string()),
+                Token::Assign,
+                Token::IntLiteral(1),
+                Token::Semicolon,
+                Token::Identifier("ptr".to_string()),
+                Token::Arrow,
+                Token::Identifier("x".to_string()),
+                Token::Assign,
+                Token::IntLiteral(2),
+                Token::Semicolon,
+            ]
+        );
     }
 }
