@@ -54,6 +54,7 @@ pub struct CodeGenerator<'ctx> {
 }
 
 impl<'ctx> CodeGenerator<'ctx> {
+    /// Creates a new code generator.
     pub fn new(context: &'ctx Context) -> Self {
         // Initialize native target to ensure we can get the default triple
         Target::initialize_native(&InitializationConfig::default()).ok();

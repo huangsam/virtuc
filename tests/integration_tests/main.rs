@@ -1,3 +1,5 @@
+//! # VirtuC Integration Test Suite
+
 mod algo_cases;
 mod cli;
 mod common;
